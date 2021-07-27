@@ -1,0 +1,308 @@
+#!/usr/bin/env python3
+"""Earnings trading tool.
+"""
+__copyright__ = "Copyright (C) 2021  Martin Blais"
+
+import copy
+import datetime
+import argparse
+from decimal import Decimal
+import logging
+import math
+import re
+import urllib.parse
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union, NamedTuple
+
+from dateutil import parser
+import click
+import ameritrade
+from more_itertools import first
+
+from johnny.base.etl import petl, Table, Record
+
+
+Json = Union[Dict[str, 'Json'], List['Json'], str, int, float]
+Q = Decimal('0.01')
+Qd = Decimal('0.1')
+Q1 = Decimal('1.')
+
+
+# Data for each strike in a chain.
+StrikeData = dict[str, Any]
+
+class Expi(NamedTuple):
+    """Data for one expiration."""
+    info: dict[str, Any]
+    puts: list[StrikeData]
+    calls: list[StrikeData]
+
+class Chain(NamedTuple):
+    """Normalized data for an options chain."""
+    info: dict[str, Any]
+    expis: dict[datetime.date, Expi]
+
+
+def get_front_expiration(chain_json: Json):
+    """Return the front expiration from the chain."""
+    strike_map = first(chain_json['callExpDateMap'].values())
+    return [data[0] for data in strike_map.values()]
+
+
+def normalize_chain(chain_json: Json) -> Chain:
+    """Normalize a TD chain response to a simple structure, joining puts and calls
+    by expiration."""
+    assert chain_json['callExpDateMap'].keys() == chain_json['putExpDateMap'].keys()
+    expis = {}
+    for expi_str in chain_json['callExpDateMap']:
+        expiration = parser.parse(expi_str.split(':')[0]).date()
+
+        puts_json = chain_json['putExpDateMap'][expi_str]
+        calls_json = chain_json['callExpDateMap'][expi_str]
+        puts = sorted([datalist[0] for datalist in puts_json.values()],
+                      key=lambda r: r['strikePrice'], reverse=True)
+        calls = sorted([datalist[0] for datalist in calls_json.values()],
+                       key=lambda r: r['strikePrice'])
+
+        any_option = first(calls_json.values())[0]
+        info = {attr: any_option[attr]
+                for attr in ['daysToExpiration', 'expirationDate', 'expirationType']}
+        info['expiration'] = expiration
+
+        expis[expiration] = Expi(info, puts, calls)
+
+    chain_info = chain_json.copy()
+    del chain_info['callExpDateMap']
+    del chain_info['putExpDateMap']
+    return Chain(chain_info, expis)
+
+
+def filter_chain(strikes: list[StrikeData]) -> Table:
+    """Filter the options chains for relevant deltas and produce a table."""
+    return (petl.fromdicts(strikes)
+            .cut('symbol', 'strikePrice', 'bid', 'ask', 'mark', 'last',
+                 'theoreticalOptionValue',
+                 'askSize', 'bidSize', 'lastSize', 'openInterest', 'totalVolume',
+                 'volatility', 'delta', 'gamma', 'theta', 'vega', 'rho', 'description'))
+
+
+def is_regular_expiration(expi: Expi) -> bool:
+    return expi.info['expirationType'] == 'R'
+
+
+def get_closest_strike(strikes: list[StrikeData],
+                       target_price: Decimal) -> tuple[Decimal, int]:
+    """Return the closest strike and index from the list."""
+    _, strikePrice, index = min([
+        (abs(strike.strikePrice - target_price), strike.strikePrice, index)
+        for index, strike in enumerate(strikes)])
+    return strikePrice.quantize(Q), index
+
+
+def expected_move(chain_info, expi: Expi) -> Optional[tuple[Decimal, Decimal]]:
+    """Compute estimates of the expected move."""
+
+    underlyingPrice = chain_info['underlying']['mark']
+
+    try:
+        putStrikePrice, index = get_closest_strike(expi.puts, underlyingPrice)
+        #print(f'ATM Strike Puts:  ${putStrikePrice}')
+        put0 = expi.puts[index]
+        put1 = expi.puts[index + 1]
+        put2 = expi.puts[index + 2]
+
+        callStrikePrice, index = get_closest_strike(expi.calls, underlyingPrice)
+        #print(f'ATM Strike Calls: ${callStrikePrice}')
+        call0 = expi.calls[index]
+        call1 = expi.calls[index + 1]
+        call2 = expi.calls[index + 2]
+    except IndexError:
+        return
+
+    # Q: Is averaging the square better?
+    atm_volatility = (call0['volatility'] + put0['volatility'])/2
+    #print(f"ATM Implied Vol: {atm_volatility}%")
+
+    #print(math.sqrt(expi.info['daysToExpiration'] / 365))
+    em_implied = Decimal(float(atm_volatility)/100 *
+                         math.sqrt(expi.info['daysToExpiration'] / 365) *
+                         float(underlyingPrice)).quantize(Q)
+    #print(f"Estimated move (implied):     ${em_implied}")
+    em_implied_85 = (em_implied * Decimal('0.85')).quantize(Q)
+    #print(f"Estimated move (85% implied): ${em_implied_85}")
+
+    # Estimate using 60% of 1 strike strangle + 30% of 2 strike strangle + 10%
+    # of 3 strike strangle.
+    em_straddles = (Decimal('0.60') * (put0.mark + call0.mark) +
+                    Decimal('0.30') * (put1.mark + call1.mark) +
+                    Decimal('0.10') * (put2.mark + call2.mark)).quantize(Q)
+    #print(f"Estimated move (straddles):   ${em_straddles}")
+
+    return em_straddles, em_implied, em_implied_85, atm_volatility
+
+
+def get_company_description(chain: Chain) -> str:
+    """Return a clean company name."""
+    description = chain.info['underlying']['description']
+    return (re.sub(r"(Common Stock|Registered Shares|Inc\.?|S\.A\.|Class [ABC12].*)", "", description)
+            .strip(' -,'))[:32]
+# TODO(blais):
+# American Depositary Shares, each representing one unit
+# Corporation Ordinary Shares (Canada)
+# Common Shares of Beneficial Interest
+
+
+TERM_HEADER = [
+    'days', 'expdate', 'regular', 'strangle',
+    'em', 'em_iv', 'atm_iv',
+    'pspr%', 'pspread', 'pmark',
+    'pdelta', 'ptarget', 'pstrike',
+    'price',
+    'cstrike', 'ctarget', 'cdelta',
+    'cmark', 'cspread', 'cspr%',
+]
+
+
+def get_term(chain: Chain, expi: Expi, max_delta: Decimal) -> tuple[str, Optional[list]]:
+    """Get data for one position."""
+
+    is_regular = is_regular_expiration(expi)
+    is_regular_str = 'REGULAR' if is_regular else 'NON-REGULAR'
+    days = expi.info['daysToExpiration']
+    expiration = expi.info['expiration']
+
+    em_data = expected_move(chain.info, expi)
+    if em_data is None:
+        return "Could not calculate EM", None
+    em_straddles, em_implied, em_implied_85, atm_iv = em_data
+    underlyingPrice = chain.info['underlying']['mark']
+
+    put_target_strike = (underlyingPrice - 2 * em_straddles).quantize(Q)
+    call_target_strike = (underlyingPrice + 2 * em_straddles).quantize(Q)
+
+    put_strike_price, index = get_closest_strike(expi.puts, put_target_strike)
+    put_strike = expi.puts[index]
+    if put_strike['bidSize'] == 0 or put_strike['askSize'] == 0:
+        return "Not enough size on puts", None
+    call_strike_price, index = get_closest_strike(expi.calls, call_target_strike)
+    call_strike = expi.calls[index]
+    if call_strike['bidSize'] == 0 or call_strike['askSize'] == 0:
+        return "Not enough size on calls", None
+
+    put_mark = put_strike['mark']
+    call_mark = call_strike['mark']
+
+    put_spread = put_strike['ask'] - put_strike['bid']
+    call_spread = call_strike['ask'] - call_strike['bid']
+    put_spread_pct = Decimal(100 * put_spread / put_strike['mark']).quantize(Q1)
+    call_spread_pct = Decimal(100 * call_spread / call_strike['mark']).quantize(Q1)
+
+    put_delta =  put_strike['delta'].quantize(Q)
+    call_delta =  call_strike['delta'].quantize(Q)
+    if abs(put_delta) > max_delta or abs(call_delta) > max_delta:
+        return "Max delta is too large", None
+
+    strangle_credits = put_strike['mark'] + call_strike['mark']
+
+    comment = ''
+    return comment, [
+        days, expiration, is_regular_str, strangle_credits,
+        em_straddles, em_implied_85, atm_iv,
+        put_spread_pct, put_spread, put_mark,
+        put_delta, put_target_strike, put_strike_price,
+        underlyingPrice.quantize(Q),
+        call_strike_price, call_target_strike, call_delta,
+        call_mark, call_spread, call_spread_pct]
+
+
+# Find a way to return an error.
+
+
+def find_first_regular_expi(chain: Chain) -> Expi:
+    """Return the first regular expiration."""
+    for date, expi in sorted(chain.expis.items()):
+        if is_regular_expiration(expi):
+            return expi
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    ameritrade.add_args(parser)
+    parser.add_argument('symbols', nargs='*',
+                        help='Symbols to process')
+    parser.add_argument('--csv-filename', '-f', action='store',
+                        help='CSV filename to read symbols from')
+    args = parser.parse_args()
+    config = ameritrade.config_from_args(args)
+    td = ameritrade.open(config)
+
+    symbols = []
+    if args.csv_filename:
+        table = petl.fromcsv(args.csv_filename)
+        symbols.extend(table.sort('symbol').values('Symbol'))
+    if args.symbols:
+        symbols.extend(args.symbols)
+
+    # TODO(blais): Look for various symbol column names, be more flexible.
+
+    header = ['symbol', 'description', 'volume'] + TERM_HEADER + ['url']
+    rows = [header]
+    max_date = datetime.date.today() + datetime.timedelta(days=90)
+    pr = lambda *args: None
+    for symbol in symbols:
+        pr(f",--{symbol}---------------------------------------------------------------")
+        chain_json = td.GetOptionChain(symbol=symbol,
+                                       includeQuotes=True,
+                                       toDate=max_date)
+        if 'callExpDateMap' not in chain_json:
+            logging.warning(f"Could not get chain data for {symbol}")
+            continue
+        chain = normalize_chain(chain_json)
+        description = get_company_description(chain)
+        url = "https://www.google.com/search?q={}".format(urllib.parse.quote(description))
+
+        # Get data for the front month, if non-regular.
+        first_expi = first(sorted(chain.expis.items()))[1]
+        if is_regular_expiration(first_expi):
+            first_expi = None
+
+        # Get data for the first regular expiration.
+        regular_expi = find_first_regular_expi(chain)
+        if not is_regular_expiration(regular_expi):
+            regular_expi = None
+
+        metrics_list = []
+        for expi in first_expi, regular_expi:
+            comment = ''
+            if expi is not None:
+                comment, metrics = get_term(chain, expi, 0.20)
+                if comment:
+                    comment = f"({comment})"
+                if metrics is None:
+                    metrics = ['N/A'] * len(TERM_HEADER)
+            else:
+                metrics = [''] * len(TERM_HEADER)
+            metrics_list.append(metrics)
+
+        volume = chain.info['underlying']['totalVolume']
+        rows.append(([symbol, description, volume] + metrics_list[0] +[comment]))
+        rows.append(([symbol, '', ''] + metrics_list[1] + [url]))
+        #rows.append([''] * len(header))
+
+        # TODO(blais): Check the spreads.
+        # TODO(blais): Skip names with no options.
+        # TODO(blais): Check the further terms if the options are too cheap.
+        # TODO(blais): Check the term structure of IV.
+        # TODO(blais): Check the volume.
+        # TODO(blais): Check the IVR.
+        # TODO(blais): Add info about skew.
+        # TODO(blais): Add info about the term structure.
+        # TODO(blais): Add stats about the prior earnings.
+
+
+    table = petl.wrap(rows)
+    print(table.lookallstr())
+
+
+if __name__ == '__main__':
+    #logging.basicConfig(level=logging.INFO, format='%(levelname)-8s: %(message)s')
+    main()
