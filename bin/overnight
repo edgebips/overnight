@@ -8,6 +8,8 @@ import datetime
 import argparse
 from decimal import Decimal
 import logging
+import time
+import collections
 import math
 import re
 import urllib.parse
@@ -22,6 +24,7 @@ from johnny.base.etl import petl, Table, Record
 
 
 Json = Union[Dict[str, 'Json'], List['Json'], str, int, float]
+ZERO = Decimal('0')
 Q = Decimal('0.01')
 Qd = Decimal('0.1')
 Q1 = Decimal('1.')
@@ -98,6 +101,14 @@ def get_closest_strike(strikes: list[StrikeData],
     return strikePrice.quantize(Q), index
 
 
+def index_with_default(alist: list[Any], index: int, default: Any) -> Any:
+    """Index into a list with a default value."""
+    try:
+        return alist[index]
+    except IndexError:
+        return default
+
+
 def expected_move(chain_info, expi: Expi) -> Optional[tuple[Decimal, Decimal]]:
     """Compute estimates of the expected move."""
 
@@ -105,37 +116,34 @@ def expected_move(chain_info, expi: Expi) -> Optional[tuple[Decimal, Decimal]]:
 
     try:
         putStrikePrice, index = get_closest_strike(expi.puts, underlyingPrice)
-        #print(f'ATM Strike Puts:  ${putStrikePrice}')
         put0 = expi.puts[index]
-        put1 = expi.puts[index + 1]
-        put2 = expi.puts[index + 2]
+        put1 = index_with_default(expi.puts, index + 1, None)
+        put2 = index_with_default(expi.puts, index + 2, None)
 
         callStrikePrice, index = get_closest_strike(expi.calls, underlyingPrice)
-        #print(f'ATM Strike Calls: ${callStrikePrice}')
         call0 = expi.calls[index]
-        call1 = expi.calls[index + 1]
-        call2 = expi.calls[index + 2]
+        call1 = index_with_default(expi.calls, index + 1, None)
+        call2 = index_with_default(expi.calls, index + 2, None)
     except IndexError:
         return
 
     # Q: Is averaging the square better?
+    if call0['volatility'] == 'NaN' or put0['volatility'] == 'NaN':
+        return
     atm_volatility = (call0['volatility'] + put0['volatility'])/2
-    #print(f"ATM Implied Vol: {atm_volatility}%")
 
-    #print(math.sqrt(expi.info['daysToExpiration'] / 365))
     em_implied = Decimal(float(atm_volatility)/100 *
                          math.sqrt(expi.info['daysToExpiration'] / 365) *
                          float(underlyingPrice)).quantize(Q)
-    #print(f"Estimated move (implied):     ${em_implied}")
     em_implied_85 = (em_implied * Decimal('0.85')).quantize(Q)
-    #print(f"Estimated move (85% implied): ${em_implied_85}")
 
     # Estimate using 60% of 1 strike strangle + 30% of 2 strike strangle + 10%
     # of 3 strike strangle.
     em_straddles = (Decimal('0.60') * (put0.mark + call0.mark) +
-                    Decimal('0.30') * (put1.mark + call1.mark) +
-                    Decimal('0.10') * (put2.mark + call2.mark)).quantize(Q)
-    #print(f"Estimated move (straddles):   ${em_straddles}")
+                    Decimal('0.30') * (put1.mark if put1 else ZERO +
+                                       call1.mark if call1 else ZERO) +
+                    Decimal('0.10') * (put2.mark if put2 else ZERO +
+                                       call2.mark if call2 else ZERO)).quantize(Q)
 
     return em_straddles, em_implied, em_implied_85, atm_volatility
 
@@ -153,17 +161,28 @@ def get_company_description(chain: Chain) -> str:
 
 TERM_HEADER = [
     'days', 'expdate', 'regular', 'strangle',
-    'em', 'em_iv', 'atm_iv',
-    'pspr%', 'pspread', 'pmark',
+    'em', 'em_iv', 'em_avg', 'atm_iv',
+    'psprpct', 'pspread', 'pmark',
     'pdelta', 'ptarget', 'pstrike',
     'price',
     'cstrike', 'ctarget', 'cdelta',
-    'cmark', 'cspread', 'cspr%',
+    'cmark', 'cspread', 'csprpct',
 ]
+Term = collections.namedtuple('Term', TERM_HEADER)
 
 
-def get_term(chain: Chain, expi: Expi, max_delta: Decimal) -> tuple[str, Optional[list]]:
+def safe_quantize(value: Decimal, quantum: Decimal) -> Decimal:
+    if value == 'NaN':
+        return ZERO
+    return value.quantize(quantum)
+
+
+def get_term(chain: Chain, expi: Expi,
+             max_delta: Decimal) -> tuple[list[str], Optional[list]]:
     """Get data for one position."""
+
+    # Error messages returned.
+    messages = []
 
     is_regular = is_regular_expiration(expi)
     is_regular_str = 'REGULAR' if is_regular else 'NON-REGULAR'
@@ -172,21 +191,23 @@ def get_term(chain: Chain, expi: Expi, max_delta: Decimal) -> tuple[str, Optiona
 
     em_data = expected_move(chain.info, expi)
     if em_data is None:
-        return "Could not calculate EM", None
+        messages.append("Could not calculate EM")
+        return messages, None
     em_straddles, em_implied, em_implied_85, atm_iv = em_data
+    em_average = (em_straddles + em_implied_85) / 2
     underlyingPrice = chain.info['underlying']['mark']
 
-    put_target_strike = (underlyingPrice - 2 * em_straddles).quantize(Q)
-    call_target_strike = (underlyingPrice + 2 * em_straddles).quantize(Q)
+    put_target_strike = (underlyingPrice - 2 * em_average).quantize(Q)
+    call_target_strike = (underlyingPrice + 2 * em_average).quantize(Q)
 
     put_strike_price, index = get_closest_strike(expi.puts, put_target_strike)
     put_strike = expi.puts[index]
     if put_strike['bidSize'] == 0 or put_strike['askSize'] == 0:
-        return "Not enough size on puts", None
+        messages.append("Not enough size on puts")
     call_strike_price, index = get_closest_strike(expi.calls, call_target_strike)
     call_strike = expi.calls[index]
     if call_strike['bidSize'] == 0 or call_strike['askSize'] == 0:
-        return "Not enough size on calls", None
+        messages.append("Not enough size on calls")
 
     put_mark = put_strike['mark']
     call_mark = call_strike['mark']
@@ -196,22 +217,24 @@ def get_term(chain: Chain, expi: Expi, max_delta: Decimal) -> tuple[str, Optiona
     put_spread_pct = Decimal(100 * put_spread / put_strike['mark']).quantize(Q1)
     call_spread_pct = Decimal(100 * call_spread / call_strike['mark']).quantize(Q1)
 
-    put_delta =  put_strike['delta'].quantize(Q)
-    call_delta =  call_strike['delta'].quantize(Q)
+    if put_strike['delta'] == 'NaN' or call_strike['delta'] == 'NaN':
+        messages.append("Delta is NaN")
+
+    put_delta = safe_quantize(put_strike['delta'], Q)
+    call_delta = safe_quantize(call_strike['delta'], Q)
     if abs(put_delta) > max_delta or abs(call_delta) > max_delta:
-        return "Max delta is too large", None
+        messages.append("Max delta is too large")
 
     strangle_credits = put_strike['mark'] + call_strike['mark']
 
-    comment = ''
-    return comment, [
+    return messages, Term(
         days, expiration, is_regular_str, strangle_credits,
-        em_straddles, em_implied_85, atm_iv,
+        em_straddles, em_implied_85, em_average, atm_iv,
         put_spread_pct, put_spread, put_mark,
         put_delta, put_target_strike, put_strike_price,
         underlyingPrice.quantize(Q),
         call_strike_price, call_target_strike, call_delta,
-        call_mark, call_spread, call_spread_pct]
+        call_mark, call_spread, call_spread_pct)
 
 
 # Find a way to return an error.
@@ -231,14 +254,23 @@ def main():
                         help='Symbols to process')
     parser.add_argument('--csv-filename', '-f', action='store',
                         help='CSV filename to read symbols from')
+    parser.add_argument('-v', '--verbose', action='store_true')
+    parser.add_argument('-r', '--rate-limit', action='store_true',
+                        help="Turn on rate limitations for large lists")
+    parser.add_argument('-n', '--filter', action='store_false', default=True,
+                        help="Turn off filtering")
     args = parser.parse_args()
     config = ameritrade.config_from_args(args)
     td = ameritrade.open(config)
 
+    if args.verbose:
+        logging.basicConfig(level=logging.INFO, format='%(levelname)-8s: %(message)s')
+
+
     symbols = []
     if args.csv_filename:
         table = petl.fromcsv(args.csv_filename)
-        symbols.extend(table.sort('symbol').values('Symbol'))
+        symbols.extend(table.sort('Symbol').values('Symbol'))
     if args.symbols:
         symbols.extend(args.symbols)
 
@@ -249,6 +281,9 @@ def main():
     max_date = datetime.date.today() + datetime.timedelta(days=90)
     pr = lambda *args: None
     for symbol in symbols:
+        if args.rate_limit:
+            time.sleep(0.1)  # Hitting rate limits.
+
         pr(f",--{symbol}---------------------------------------------------------------")
         chain_json = td.GetOptionChain(symbol=symbol,
                                        includeQuotes=True,
@@ -270,33 +305,50 @@ def main():
         if not is_regular_expiration(regular_expi):
             regular_expi = None
 
-        metrics_list = []
+        term_list = []
         for expi in first_expi, regular_expi:
             comment = ''
             if expi is not None:
-                comment, metrics = get_term(chain, expi, 0.20)
-                if comment:
-                    comment = f"({comment})"
-                if metrics is None:
-                    metrics = ['N/A'] * len(TERM_HEADER)
+                messages, term = get_term(chain, expi, 0.20)
+                if messages:
+                    comment = "; ".join(messages)
+                if term is None:
+                    term = ['N/A'] * len(TERM_HEADER)
             else:
-                metrics = [''] * len(TERM_HEADER)
-            metrics_list.append(metrics)
+                term = [''] * len(TERM_HEADER)
+            term_list.append(term)
 
         volume = chain.info['underlying']['totalVolume']
-        rows.append(([symbol, description, volume] + metrics_list[0] +[comment]))
-        rows.append(([symbol, '', ''] + metrics_list[1] + [url]))
+
+        if args.filter:
+            ## TODO(blais): Remove
+            if volume < 100_000:
+                continue
+            if not ((isinstance(term_list[0], Term) and term_list[0].strangle > 0.4) or
+                    (isinstance(term_list[1], Term) and term_list[1].strangle > 0.4)):
+                continue
+            if not (isinstance(term_list[0], Term) and (term_list[0].psprpct < 50 and term_list[0].csprpct < 50) or
+                    isinstance(term_list[1], Term) and (term_list[1].psprpct < 50 and term_list[1].csprpct < 50)):
+                continue
+
+        rows.append(([symbol, description, volume] + list(term_list[0]) +[comment]))
+        rows.append((['', '', ''] + list(term_list[1]) + [url]))
         #rows.append([''] * len(header))
 
         # TODO(blais): Check the spreads.
         # TODO(blais): Skip names with no options.
         # TODO(blais): Check the further terms if the options are too cheap.
         # TODO(blais): Check the term structure of IV.
+        # TODO(blais): Add info about the term structure.
         # TODO(blais): Check the volume.
         # TODO(blais): Check the IVR.
         # TODO(blais): Add info about skew.
-        # TODO(blais): Add info about the term structure.
-        # TODO(blais): Add stats about the prior earnings.
+        # TODO(blais): If a third strike isn't available for em_straddle, make it zero.
+        # TODO(blais): Warn on too small a strangle opportunity
+        # TODO(blais): Add stats about the prior earnings, like E*Trade.
+        # TODO(blais): Spread elimination should be an average of all the strikes up to the one I'm trying to trade
+        # TODO(blais): Filter out strikes at below 4 deltas, their spreads are out-of-whack.
+        # TODO(blais): Also look at the price of the strangle one strike in, to avoid too harsh filtering on that.
 
 
     table = petl.wrap(rows)
@@ -304,5 +356,4 @@ def main():
 
 
 if __name__ == '__main__':
-    #logging.basicConfig(level=logging.INFO, format='%(levelname)-8s: %(message)s')
     main()
