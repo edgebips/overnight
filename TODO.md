@@ -1,0 +1,2 @@
+- Convert the output to a series of proto objects
+- Separate the rendering stage, write out to HTML
