@@ -281,16 +281,28 @@ def main():
     max_date = datetime.date.today() + datetime.timedelta(days=90)
     pr = lambda *args: None
     for symbol in symbols:
-        if args.rate_limit:
-            time.sleep(0.1)  # Hitting rate limits.
 
-        pr(f",--{symbol}---------------------------------------------------------------")
+        logging.info(f",--{symbol}---------------------------------------------------------------")
         chain_json = td.GetOptionChain(symbol=symbol,
                                        includeQuotes=True,
                                        toDate=max_date)
-        if 'callExpDateMap' not in chain_json:
+        if args.rate_limit:
+            time.sleep(0.2)  # Hitting rate limits.
+
+        if ('error' in chain_json and
+            re.match('transactions per seconds restriction reached', chain_json['error'])):
+            time.sleep(1)
+
+        # TODO(blais): Remove
+        if 'status' not in chain_json:
+            pp(chain_json)
+
+        #print('@@@', chain_json['status'], 'callExpDateMap' not in chain_json)
+        #pp(chain_json['callExpDateMap'])
+        if chain_json['status'] == 'FAILED' or 'callExpDateMap' not in chain_json:
             logging.warning(f"Could not get chain data for {symbol}")
             continue
+
         chain = normalize_chain(chain_json)
         description = get_company_description(chain)
         url = "https://www.google.com/search?q={}".format(urllib.parse.quote(description))
