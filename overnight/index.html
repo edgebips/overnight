@@ -1,0 +1,81 @@
+<!doctype html>
+<html>
+
+<head>
+
+  <link rel="preconnect"
+        href="https://fonts.gstatic.com">
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=PT+Sans+Narrow:wght@700&display=swap">
+
+  <style>
+
+    body {
+        font-family: 'PT Sans Narrow', sans-serif;
+        font-size: 14px;
+        width: 1600px;
+    }
+
+    div.earnings {
+        margin-bottom: 2em;
+    }
+
+    table {
+        border-collapse: collapse;
+        width: 100%;
+    }
+    table td, table th {
+        border: thin solid black;
+        text-align: center;
+        padding-left: 0.5em;
+        padding-right: 0.5em;
+    }
+    table tr.header {
+        font-style: italic;
+        font-size: smaller;
+        color: #888;
+    }
+    td.strangle_cr {
+        background-color: #EDC;
+    }
+    td.em_straddle, td.em_implied {
+        background-color: #EEF;
+    }
+    td.em_effective {
+        background-color: #CCF;
+    }
+    td.price {
+        font-weight: bold;
+        background-color: #DDD;
+    }
+    td.put-strike {
+        background-color: #FCC;
+    }
+    td.call-strike {
+        background-color: #CFC;
+    }
+    td.put-target {
+        background-color: #FEE;
+    }
+    td.call-target {
+        background-color: #EFE;
+    }
+    td.diagnostics {
+        font-size: smaller;
+        text-align: left;
+        color: red;
+    }
+
+  </style>
+
+</head>
+
+<body>
+<h1>Earnings {{date}}</h1>
+
+{% for e in earlist.earnings: %}
+    {% include "single.html" %}
+{% endfor %}
+
+</body>
+</html>

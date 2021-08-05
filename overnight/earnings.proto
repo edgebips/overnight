@@ -1,0 +1,123 @@
+// -*- mode: protobuf -*-
+// Earnings output data object for Overnight.
+
+syntax = "proto2";
+
+package overnight;
+
+// A list of earnings (a container for the output file).
+message EarningsList {
+  repeated Earnings earnings = 1;
+}
+
+// All the analysis data produced for a single earnings name, including multiple
+// candidate positions.
+message Earnings {
+
+  // The stock under consideration, having earnings soon.
+  optional string underlying = 1;
+
+  // Company name (unnormalized).
+  optional string name = 2;
+
+  // Current price of the underlying.
+  optional float price = 3;
+
+  // Stats on price history.
+  optional float year_high = 4;
+  optional float year_low = 5;
+  optional float percent_change = 6;
+
+  // Volume traded today.
+  optional int64 volume = 7;
+
+  // A list of expiration terms.
+  repeated Expiration expirations = 8;
+
+  // The time at which this snapshot was made, in 1000'ths of a second.
+  optional int64 quote_time = 9;
+
+  // The time of the earnings call/report.
+  optional EarningsTime earnings_time = 10;
+
+  // A success flag. False if we failed to gather information about this
+  // underlying.
+  optional bool success = 11;
+
+  // A list of errors and other warnings related to this analysis.
+  repeated string diagnostics = 12;
+}
+
+enum EarningsTime {
+  AMC = 0; // After market closes.
+  BMO = 1; // Before market opens.
+}
+
+// Calculations for a position at a particular expiration.
+message Expiration {
+
+  // Expiration date.
+  optional Date date = 1;
+
+  // Days to expiration, as of the time the quote is made.
+  optional int32 days = 2;
+
+  // A flag to indicate whether it's a regular term or not.
+  optional bool is_regular = 3;
+
+  // Credits received on a strangle for the position.
+  optional float strangle_cr = 4;
+
+  // Vol implied from the ATM options.
+  optional float atm_iv = 5;
+
+  // Expected move (1SD @ 1d) estimate, from straddle price, and from the
+  // implied vol (from BSM) of the options at term.
+  optional float em_straddle = 6;
+  optional float em_implied = 7;
+  optional float em_effective = 8;
+
+  // Effective expected move we calculated from the estimates above. This is
+  // what's being used to manufacture the position proposal
+  optional float em = 9;
+
+  // Each position on a strangle.
+  optional Strike put = 10;
+  optional Strike call = 11;
+
+  // A list of errors and other warnings related to this analysis.
+  repeated string diagnostics = 12;
+}
+
+// Details of one strike's position.
+message Strike {
+
+  // The selected strike price.
+  optional float strike = 1;
+
+  // The target price, based on the expected move.
+  optional float target = 2;
+
+  // The actual (interpolated) delta for that strike (not for the target).
+  optional float delta = 3;
+
+  // The size on each side of the strike.
+  optional int64 size_bid = 4;
+  optional int64 size_ask = 5;
+
+  // The spread at the strike.
+  optional float spread = 6;
+
+  // The average spread of the strikes around the chosen strike.
+  optional float spread_frac = 7;
+
+  // The midpoint at the strike, based on bid/ask at that strike. Note that this
+  // does not use put-call parity to estimate whether the spread is invalid.
+  optional float mark = 8;
+}
+
+message Date {
+  optional int32 year = 1;
+  optional int32 month = 2;
+  optional int32 day = 3;
+}

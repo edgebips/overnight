@@ -8,6 +8,8 @@ import csv
 import sys
 import itertools
 import time
+import io
+from os import path
 from typing import Optional
 
 import click
@@ -83,17 +85,29 @@ def fetch_earnings_whispers_list(headless: bool) -> str:
 
 
 @click.command()
-@click.option('--headless/--no-headless', default=True, help="Run headless or not")
-@click.option('--output', '-f', help="Output filename")
+@click.option('--headless/--no-headless', default=False, help="Run headless or not")
+@click.option('--output', '-o', help="Output filename")
 def main(headless: bool, output: Optional[str]):
     logging.basicConfig(level=logging.INFO, format='%(levelname)-8s: %(message)s')
 
     tickers_amc, tickers_bmo = fetch_earnings_whispers_list(headless)
-    wr = csv.writer(sys.stdout) if not output else open(output, 'w')
+    buf = io.StringIO()
+    wr = csv.writer(buf)
     wr.writerow(['Symbol', 'When'])
+    num_tickers = 0
     for tickers, when in (tickers_amc, 'AMC'), (tickers_bmo, 'BMO'):
         for ticker in tickers:
+            num_tickers += 1
             wr.writerow([ticker, when])
+
+    if not output:
+        output = path.join(os.getcwd(), 'earnings-{}.csv'.format(datetime.date.today()))
+        logging.info(f"Wrote {num_tickers} entries to {output}")
+    with open(output, 'w') as outfile:
+        outfile.write(buf.getvalue())
+
+    if not output:
+        print(buf.getvalue())
 
 
 if __name__ == '__main__':

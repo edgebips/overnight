@@ -1,26 +1,35 @@
 #!/usr/bin/env python3
-"""Earnings trading tool.
+"""Earnings trading identification tool.
+
+This tool produces a list of tradeable names with earnings AMC or BMO the next
+day. Each term is inspected for desirable characteristics.
 """
 __copyright__ = "Copyright (C) 2021  Martin Blais"
 
-import copy
-import datetime
-import argparse
 from decimal import Decimal
-import logging
-import time
-import collections
-import math
-import re
-import urllib.parse
+from os import path
 from typing import Any, Dict, Iterator, List, Optional, Tuple, Union, NamedTuple
+import argparse
+import collections
+import copy
+import csv
+import datetime
+import io
+import logging
+import math
+import os
+import re
+import time
+import urllib.parse
 
 from dateutil import parser
-import click
-import ameritrade
 from more_itertools import first
+import ameritrade
+import click
+import jinja2
 
 from johnny.base.etl import petl, Table, Record
+from overnight import earnings_pb2 as pb
 
 
 Json = Union[Dict[str, 'Json'], List['Json'], str, int, float]
@@ -130,12 +139,11 @@ def expected_move(chain_info, expi: Expi) -> Optional[tuple[Decimal, Decimal]]:
     # Q: Is averaging the square better?
     if call0['volatility'] == 'NaN' or put0['volatility'] == 'NaN':
         return
-    atm_volatility = (call0['volatility'] + put0['volatility'])/2
+    atm_volatility = (call0['volatility'] + put0['volatility'])/2 / 100
 
-    em_implied = Decimal(float(atm_volatility)/100 *
+    em_implied = Decimal(float(atm_volatility) *
                          math.sqrt(expi.info['daysToExpiration'] / 365) *
                          float(underlyingPrice)).quantize(Q)
-    em_implied_85 = (em_implied * Decimal('0.85')).quantize(Q)
 
     # Estimate using 60% of 1 strike strangle + 30% of 2 strike strangle + 10%
     # of 3 strike strangle.
@@ -145,18 +153,12 @@ def expected_move(chain_info, expi: Expi) -> Optional[tuple[Decimal, Decimal]]:
                     Decimal('0.10') * (put2.mark if put2 else ZERO +
                                        call2.mark if call2 else ZERO)).quantize(Q)
 
-    return em_straddles, em_implied, em_implied_85, atm_volatility
+    return em_straddles, em_implied, atm_volatility
 
 
 def get_company_description(chain: Chain) -> str:
     """Return a clean company name."""
-    description = chain.info['underlying']['description']
-    return (re.sub(r"(Common Stock|Registered Shares|Inc\.?|S\.A\.|Class [ABC12].*)", "", description)
-            .strip(' -,'))[:32]
-# TODO(blais):
-# American Depositary Shares, each representing one unit
-# Corporation Ordinary Shares (Canada)
-# Common Shares of Beneficial Interest
+    return chain.info['underlying']['description']
 
 
 TERM_HEADER = [
@@ -178,73 +180,127 @@ def safe_quantize(value: Decimal, quantum: Decimal) -> Decimal:
 
 
 def get_term(chain: Chain, expi: Expi,
-             max_delta: Decimal) -> tuple[list[str], Optional[list]]:
+             max_delta: Decimal) -> tuple[list[str], Optional[list], pb.Expiration]:
     """Get data for one position."""
 
     # Error messages returned.
-    messages = []
+    x = pb.Expiration()
 
-    is_regular = is_regular_expiration(expi)
-    is_regular_str = 'REGULAR' if is_regular else 'NON-REGULAR'
-    days = expi.info['daysToExpiration']
+    x.is_regular = is_regular_expiration(expi)
+    x.days = expi.info['daysToExpiration']
     expiration = expi.info['expiration']
+    x.date.year = expiration.year
+    x.date.month = expiration.month
+    x.date.day = expiration.day
 
     em_data = expected_move(chain.info, expi)
     if em_data is None:
-        messages.append("Could not calculate EM")
-        return messages, None
-    em_straddles, em_implied, em_implied_85, atm_iv = em_data
-    em_average = (em_straddles + em_implied_85) / 2
-    underlyingPrice = chain.info['underlying']['mark']
+        x.diagnostics.append("ERROR: Could not calculate EM")
+        return x
+    em_straddle, em_implied, x.atm_iv = em_data
+    em_effective = (em_straddle + em_implied * Decimal('0.85')) / 2
+    underlying_price = chain.info['underlying']['mark']
+    x.em_straddle = em_straddle
+    x.em_implied = em_implied
+    x.em_effective = em_effective
 
-    put_target_strike = (underlyingPrice - 2 * em_average).quantize(Q)
-    call_target_strike = (underlyingPrice + 2 * em_average).quantize(Q)
+    x.put.target = put_target_strike = (underlying_price - 2 * em_effective).quantize(Q)
+    x.call.target = call_target_strike = (underlying_price + 2 * em_effective).quantize(Q)
 
-    put_strike_price, index = get_closest_strike(expi.puts, put_target_strike)
+    x.put.strike, index = get_closest_strike(expi.puts, put_target_strike)
     put_strike = expi.puts[index]
     if put_strike['bidSize'] == 0 or put_strike['askSize'] == 0:
-        messages.append("Not enough size on puts")
-    call_strike_price, index = get_closest_strike(expi.calls, call_target_strike)
+        x.diagnostics.append(
+            f"WARNING: No size on puts ({put_strike['bidSize']} x {put_strike['askSize']})")
+    x.call.strike, index = get_closest_strike(expi.calls, call_target_strike)
     call_strike = expi.calls[index]
     if call_strike['bidSize'] == 0 or call_strike['askSize'] == 0:
-        messages.append("Not enough size on calls")
+        x.diagnostics.append(
+            f"WARNING: No size on calls ({call_strike['bidSize']} x {call_strike['askSize']})")
 
-    put_mark = put_strike['mark']
-    call_mark = call_strike['mark']
+    x.put.mark = put_strike['mark']
+    x.call.mark = call_strike['mark']
 
-    put_spread = put_strike['ask'] - put_strike['bid']
-    call_spread = call_strike['ask'] - call_strike['bid']
-    put_spread_pct = Decimal(100 * put_spread / put_strike['mark']).quantize(Q1)
-    call_spread_pct = Decimal(100 * call_spread / call_strike['mark']).quantize(Q1)
+    x.put.spread = put_strike['ask'] - put_strike['bid']
+    x.call.spread = call_strike['ask'] - call_strike['bid']
+    x.put.spread_frac = x.put.spread / x.put.mark
+    x.call.spread_frac = x.call.spread / x.call.mark
 
     if put_strike['delta'] == 'NaN' or call_strike['delta'] == 'NaN':
-        messages.append("Delta is NaN")
+        x.diagnostics.append("ERROR: Delta is NaN")
 
-    put_delta = safe_quantize(put_strike['delta'], Q)
-    call_delta = safe_quantize(call_strike['delta'], Q)
-    if abs(put_delta) > max_delta or abs(call_delta) > max_delta:
-        messages.append("Max delta is too large")
+    x.put.delta = safe_quantize(put_strike['delta'], Q)
+    x.call.delta = safe_quantize(call_strike['delta'], Q)
+    if abs(x.put.delta) > max_delta or abs(x.call.delta) > max_delta:
+        x.diagnostics.append(f"WARNING: Delta is too large (>{max_delta})")
 
-    strangle_credits = put_strike['mark'] + call_strike['mark']
+    x.strangle_cr = x.put.mark + x.call.mark
 
-    return messages, Term(
-        days, expiration, is_regular_str, strangle_credits,
-        em_straddles, em_implied_85, em_average, atm_iv,
-        put_spread_pct, put_spread, put_mark,
-        put_delta, put_target_strike, put_strike_price,
-        underlyingPrice.quantize(Q),
-        call_strike_price, call_target_strike, call_delta,
-        call_mark, call_spread, call_spread_pct)
+    # Check for enough credits.
+    min_credits = 0.4
+    if x.strangle_cr < 0.4:
+        x.diagnostics.append(
+            f"WARNING: Not enough credits received (<{min_credits})")
+
+    # Check relative spread size.
+    max_spread_frac = 0.50
+    if x.put.spread_frac > max_spread_frac:
+        x.diagnostics.append(f"WARNING: Put spreads are wide (>{max_spread_frac:.0%})")
+    if x.call.spread_frac > max_spread_frac:
+        x.diagnostics.append(f"WARNING: Call spreads are wide (>{max_spread_frac:.0%})")
+
+    return x
 
 
-# Find a way to return an error.
-
-
-def find_first_regular_expi(chain: Chain) -> Expi:
+def find_regular_expis(chain: Chain) -> Iterator[Expi]:
     """Return the first regular expiration."""
     for date, expi in sorted(chain.expis.items()):
         if is_regular_expiration(expi):
-            return expi
+            yield expi
+
+
+def analyze_earnings(chain_json: Json,
+                     max_dte: int=60) -> pb.Earnings:
+    """Run the analysis on a single earnings name."""
+
+    earnings = pb.Earnings()
+
+    chain = normalize_chain(chain_json)
+    earnings.underlying = chain.info['symbol']
+    earnings.name = get_company_description(chain)
+
+    underlying = chain.info['underlying']
+    earnings.price = underlying['mark']
+    earnings.year_high = underlying['fiftyTwoWeekHigh']
+    earnings.year_low = underlying['fiftyTwoWeekLow']
+    earnings.percent_change = underlying['percentChange']
+    earnings.volume = underlying['totalVolume']
+    earnings.quote_time = underlying['quoteTime']
+
+    # Get data for the front term if non-regular.
+    expi_list = []
+    first_expi = first(sorted(chain.expis.items()))[1]
+    if not is_regular_expiration(first_expi):
+        expi_list.append(first_expi)
+
+    # Get data for all regular expirations up to a maximum.
+    for expi in find_regular_expis(chain):
+        if expi.info['daysToExpiration'] > max_dte:
+            break
+        expi_list.append(expi)
+
+    # Process each fo the expirations.
+    for expi in expi_list:
+        if expi is not None:
+            earnings.expirations.append(get_term(chain, expi, 0.20))
+
+    # Check volume.
+    volume_threshold = 100_000
+    if earnings.volume < volume_threshold:
+        earnings.diagnostics.append(
+            f"WARNING: Low volume (less than {volume_threshold})")
+
+    return earnings
 
 
 def main():
@@ -257,8 +313,12 @@ def main():
     parser.add_argument('-v', '--verbose', action='store_true')
     parser.add_argument('-r', '--rate-limit', action='store_true',
                         help="Turn on rate limitations for large lists")
-    parser.add_argument('-n', '--filter', action='store_false', default=True,
-                        help="Turn off filtering")
+
+    # parser.add_argument('-n', '--filter', action='store_false', default=True,
+    #                     help="Turn off filtering")
+
+    parser.add_argument('--output', action='store',
+                        help='Output directory to write results to.')
     args = parser.parse_args()
     config = ameritrade.config_from_args(args)
     td = ameritrade.open(config)
@@ -266,105 +326,106 @@ def main():
     if args.verbose:
         logging.basicConfig(level=logging.INFO, format='%(levelname)-8s: %(message)s')
 
-
     symbols = []
     if args.csv_filename:
-        table = petl.fromcsv(args.csv_filename)
-        symbols.extend(table.sort('Symbol').values('Symbol'))
+        symbols_table = petl.fromcsv(args.csv_filename)
+        symbols.extend(symbols_table.sort('Symbol').values('Symbol'))
     if args.symbols:
         symbols.extend(args.symbols)
 
     # TODO(blais): Look for various symbol column names, be more flexible.
+    earlist = pb.EarningsList()
 
     header = ['symbol', 'description', 'volume'] + TERM_HEADER + ['url']
     rows = [header]
     max_date = datetime.date.today() + datetime.timedelta(days=90)
     pr = lambda *args: None
     for symbol in symbols:
-
         logging.info(f",--{symbol}---------------------------------------------------------------")
-        chain_json = td.GetOptionChain(symbol=symbol,
-                                       includeQuotes=True,
-                                       toDate=max_date)
-        if args.rate_limit:
-            time.sleep(0.2)  # Hitting rate limits.
+        # Fetch the option chain.
+        while True:
+            chain_json = td.GetOptionChain(symbol=symbol,
+                                           includeQuotes=True,
+                                           toDate=max_date)
 
-        if ('error' in chain_json and
-            re.match('transactions per seconds restriction reached', chain_json['error'])):
-            time.sleep(1)
+            # Half-assed recovery from rate limit hit.
+            # TODO(blais): Properly handle this in the API code.
+            if args.rate_limit:
+                time.sleep(0.1)
+            if ('error' in chain_json and
+                re.match('transactions per seconds restriction reached', chain_json['error'])):
+                time.sleep(5)
+                continue
+            break
 
-        # TODO(blais): Remove
-        if 'status' not in chain_json:
-            pp(chain_json)
-
-        #print('@@@', chain_json['status'], 'callExpDateMap' not in chain_json)
-        #pp(chain_json['callExpDateMap'])
+        # Handle errors fetching.
+        earnings = earlist.earnings.add()
+        earnings.underlying = symbol
         if chain_json['status'] == 'FAILED' or 'callExpDateMap' not in chain_json:
             logging.warning(f"Could not get chain data for {symbol}")
+            earnings.success = False
+            earnings.diagnostics.append(f"ERROR: Could not get chain data for {symbol}")
             continue
+        else:
+            earnings.success = True
+            earnings.CopyFrom(analyze_earnings(chain_json))
 
-        chain = normalize_chain(chain_json)
-        description = get_company_description(chain)
-        url = "https://www.google.com/search?q={}".format(urllib.parse.quote(description))
+    # Render output.
+    if not args.output:
+        print(earlist)
+    else:
+        # Create root dir.
+        os.makedirs(args.output, exist_ok=True)
+        with open(path.join(args.output, "earnings.pbtxt"), "w") as outfile:
+            print(earlist, file=outfile)
 
-        # Get data for the front month, if non-regular.
-        first_expi = first(sorted(chain.expis.items()))[1]
-        if is_regular_expiration(first_expi):
-            first_expi = None
+        # Copy the input symbols.
+        with open(path.join(args.output, "symbols.csv"), "w") as outfile:
+            wr = csv.writer(outfile)
+            wr.writerows([(symbol,) for symbol in symbols])
 
-        # Get data for the first regular expiration.
-        regular_expi = find_first_regular_expi(chain)
-        if not is_regular_expiration(regular_expi):
-            regular_expi = None
+        # Render to a single HTML page.
+        with open(path.join(args.output, "earnings.html"), "w") as outfile:
+            render_earnings_to_html(earlist, outfile)
 
-        term_list = []
-        for expi in first_expi, regular_expi:
-            comment = ''
-            if expi is not None:
-                messages, term = get_term(chain, expi, 0.20)
-                if messages:
-                    comment = "; ".join(messages)
-                if term is None:
-                    term = ['N/A'] * len(TERM_HEADER)
-            else:
-                term = [''] * len(TERM_HEADER)
-            term_list.append(term)
-
-        volume = chain.info['underlying']['totalVolume']
-
-        if args.filter:
-            ## TODO(blais): Remove
-            if volume < 100_000:
-                continue
-            if not ((isinstance(term_list[0], Term) and term_list[0].strangle > 0.4) or
-                    (isinstance(term_list[1], Term) and term_list[1].strangle > 0.4)):
-                continue
-            if not (isinstance(term_list[0], Term) and (term_list[0].psprpct < 50 and term_list[0].csprpct < 50) or
-                    isinstance(term_list[1], Term) and (term_list[1].psprpct < 50 and term_list[1].csprpct < 50)):
-                continue
-
-        rows.append(([symbol, description, volume] + list(term_list[0]) +[comment]))
-        rows.append((['', '', ''] + list(term_list[1]) + [url]))
-        #rows.append([''] * len(header))
-
-        # TODO(blais): Check the spreads.
-        # TODO(blais): Skip names with no options.
-        # TODO(blais): Check the further terms if the options are too cheap.
-        # TODO(blais): Check the term structure of IV.
-        # TODO(blais): Add info about the term structure.
-        # TODO(blais): Check the volume.
-        # TODO(blais): Check the IVR.
-        # TODO(blais): Add info about skew.
-        # TODO(blais): If a third strike isn't available for em_straddle, make it zero.
-        # TODO(blais): Warn on too small a strangle opportunity
-        # TODO(blais): Add stats about the prior earnings, like E*Trade.
-        # TODO(blais): Spread elimination should be an average of all the strikes up to the one I'm trying to trade
-        # TODO(blais): Filter out strikes at below 4 deltas, their spreads are out-of-whack.
-        # TODO(blais): Also look at the price of the strangle one strike in, to avoid too harsh filtering on that.
+        # Filter down the list to tradeable ones only and render to another page.
+        earlist_tradeable = pb.EarningsList()
+        for earnings in earlist.earnings:
+            if is_tradeable(earnings):
+                earlist_tradeable.earnings.append(earnings)
+        with open(path.join(args.output, "earnings-tradeable.html"), "w") as outfile:
+            render_earnings_to_html(earlist_tradeable, outfile)
 
 
-    table = petl.wrap(rows)
-    print(table.lookallstr())
+def is_tradeable(earnings: pb.Earnings):
+    """Return true if this earnings name has some tradeable expirations."""
+    return (not earnings.diagnostics and
+            any(not expi.diagnostics for expi in earnings.expirations))
+
+
+def clean_name(name: str) -> str:
+    """Return a cleaned up version of the name, removing common suffixes."""
+    return (re.sub(r"(Common Stock|Registered Shares|Inc\.?|S\.A\.|Class [ABC12].*)",
+                   "", name)
+            .strip(' -,'))
+
+def get_url(name: str) -> str:
+    """Return a URL for searching for what the company does.."""
+    return "https://www.google.com/search?q={}".format(urllib.parse.quote(clean_name(name)))
+
+
+def render_earnings_to_html(earlist: pb.EarningsList, outfile: io.IOBase):
+    """Render a single HTML file with all the earnings."""
+
+    env = jinja2.Environment(
+        loader=jinja2.PackageLoader("overnight", ""),
+        autoescape=jinja2.select_autoescape())
+    env.globals['get_url'] = get_url
+    env.globals['clean_name'] = clean_name
+
+    index = env.get_template("index.html")
+    outfile.write(index.render(earlist=earlist,
+                               date=datetime.date.today()))
 
 
 if __name__ == '__main__':
