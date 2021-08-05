@@ -3,6 +3,8 @@
 
 <head>
 
+  <title>Earnings for {{date}}</title>
+
   <link rel="preconnect"
         href="https://fonts.gstatic.com">
   <link rel="stylesheet"
@@ -71,7 +73,7 @@
 </head>
 
 <body>
-<h1>Earnings {{date}}</h1>
+<h1>Earnings for {{date}}</h1>
 
 {% for e in earlist.earnings: %}
     {% include "single.html" %}

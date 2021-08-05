@@ -203,8 +203,9 @@ def get_term(chain: Chain, expi: Expi, config: pb.Config) -> pb.Expiration:
     x.em_implied = em_implied
     x.em_effective = em_effective
 
-    x.put.target = put_target_strike = (underlying_price - 2 * em_effective).quantize(Q)
-    x.call.target = call_target_strike = (underlying_price + 2 * em_effective).quantize(Q)
+    width = Decimal(config.strangle_em_width) * em_effective
+    x.put.target = put_target_strike = (underlying_price - width).quantize(Q)
+    x.call.target = call_target_strike = (underlying_price + width).quantize(Q)
 
     x.put.strike, index = get_closest_strike(expi.puts, put_target_strike)
     put_strike = expi.puts[index]
@@ -332,6 +333,39 @@ def render_earnings_to_html(earlist: pb.EarningsList, outfile: io.IOBase):
                                date=datetime.date.today()))
 
 
+def render_files(symbols: List[str], config: pb.Config, earlist_all: pb.EarningsList,
+                 output_dir: str):
+    """Render all the output files to a directory."""
+
+    # Create root dir.
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Save the input config.
+    with open(path.join(output_dir, "config.pbtxt"), "w") as outfile:
+        print(config, file=outfile)
+
+    # Write out the evaluated data.
+    with open(path.join(output_dir, "earnings.pbtxt"), "w") as outfile:
+        print(earlist_all, file=outfile)
+
+    # Copy the input symbols.
+    with open(path.join(output_dir, "symbols.csv"), "w") as outfile:
+        wr = csv.writer(outfile)
+        wr.writerows([(symbol,) for symbol in symbols])
+
+    # Render to a single HTML page.
+    with open(path.join(output_dir, "earnings-all.html"), "w") as outfile:
+        render_earnings_to_html(earlist_all, outfile)
+
+    # Filter down the list to tradeable ones only and render to another page.
+    earlist = pb.EarningsList()
+    for earnings in earlist_all.earnings:
+        if is_tradeable(earnings):
+            earlist.earnings.append(earnings)
+    with open(path.join(output_dir, "earnings.html"), "w") as outfile:
+        render_earnings_to_html(earlist, outfile)
+
+
 def main():
     parser = argparse.ArgumentParser()
     ameritrade.add_args(parser)
@@ -360,6 +394,7 @@ def main():
     config.min_strangle_credits = 0.40
     config.max_spread_frac = 0.50
     config.min_size = 1
+    config.strangle_em_width = 2.0
 
     symbols = []
     if args.csv_filename:
@@ -372,10 +407,10 @@ def main():
 
     header = ['symbol', 'description', 'volume'] + TERM_HEADER + ['url']
     rows = [header]
-    max_date = datetime.date.today() + datetime.timedelta(days=89)
-    pr = lambda *args: None
+    max_date = datetime.date.today() + datetime.timedelta(days=config.max_dte + 7)
     for symbol in symbols:
         logging.info(f",--{symbol}---------------------------------------------------------------")
+
         # Fetch the option chain.
         while True:
             chain_json = td.GetOptionChain(symbol=symbol,
@@ -410,27 +445,7 @@ def main():
     if not args.output:
         print(earlist_all)
     else:
-        # Create root dir.
-        os.makedirs(args.output, exist_ok=True)
-        with open(path.join(args.output, "earnings.pbtxt"), "w") as outfile:
-            print(earlist_all, file=outfile)
-
-        # Copy the input symbols.
-        with open(path.join(args.output, "symbols.csv"), "w") as outfile:
-            wr = csv.writer(outfile)
-            wr.writerows([(symbol,) for symbol in symbols])
-
-        # Render to a single HTML page.
-        with open(path.join(args.output, "earnings-all.html"), "w") as outfile:
-            render_earnings_to_html(earlist_all, outfile)
-
-        # Filter down the list to tradeable ones only and render to another page.
-        earlist = pb.EarningsList()
-        for earnings in earlist_all.earnings:
-            if is_tradeable(earnings):
-                earlist.earnings.append(earnings)
-        with open(path.join(args.output, "earnings.html"), "w") as outfile:
-            render_earnings_to_html(earlist, outfile)
+        render_files(symbols, config, earlist_all, args.output)
 
 
 if __name__ == '__main__':

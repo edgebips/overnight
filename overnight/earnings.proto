@@ -38,6 +38,10 @@ message Config {
   // This can be set to one unless you want to ensure at least some minimum
   // size, in which case you set it to a higher value.
   optional int32 min_size = 6;
+
+  // Width of the strangle in terms of a multiplier of the expected move. For
+  // example, if you set this to 2.0, we will select strikes closest to 2 x EM.
+  optional double strangle_em_width = 7;
 }
 
 // A list of earnings (a container for the output file).

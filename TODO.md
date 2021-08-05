@@ -5,3 +5,6 @@
 - Add stats about the prior earnings.
 - Filter out strikes at below 4 deltas, their spreads are out-of-whack.
 - Also look at the price of the strangle one strike in, to avoid too harsh filtering on that.
+
+- Add AMC & BMO per symbol.
+- Create script to check for outlier moves automatically, and warn via notification.
