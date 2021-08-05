@@ -20,7 +20,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   syntax='proto2',
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_pb=b'\n\x18overnight/earnings.proto\x12\tovernight\"5\n\x0c\x45\x61rningsList\x12%\n\x08\x65\x61rnings\x18\x01 \x03(\x0b\x32\x13.overnight.Earnings\"\x9e\x02\n\x08\x45\x61rnings\x12\x12\n\nunderlying\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\r\n\x05price\x18\x03 \x01(\x02\x12\x11\n\tyear_high\x18\x04 \x01(\x02\x12\x10\n\x08year_low\x18\x05 \x01(\x02\x12\x16\n\x0epercent_change\x18\x06 \x01(\x02\x12\x0e\n\x06volume\x18\x07 \x01(\x03\x12*\n\x0b\x65xpirations\x18\x08 \x03(\x0b\x32\x15.overnight.Expiration\x12\x12\n\nquote_time\x18\t \x01(\x03\x12.\n\rearnings_time\x18\n \x01(\x0e\x32\x17.overnight.EarningsTime\x12\x0f\n\x07success\x18\x0b \x01(\x08\x12\x13\n\x0b\x64iagnostics\x18\x0c \x03(\t\"\x93\x02\n\nExpiration\x12\x1d\n\x04\x64\x61te\x18\x01 \x01(\x0b\x32\x0f.overnight.Date\x12\x0c\n\x04\x64\x61ys\x18\x02 \x01(\x05\x12\x12\n\nis_regular\x18\x03 \x01(\x08\x12\x13\n\x0bstrangle_cr\x18\x04 \x01(\x02\x12\x0e\n\x06\x61tm_iv\x18\x05 \x01(\x02\x12\x13\n\x0b\x65m_straddle\x18\x06 \x01(\x02\x12\x12\n\nem_implied\x18\x07 \x01(\x02\x12\x14\n\x0c\x65m_effective\x18\x08 \x01(\x02\x12\n\n\x02\x65m\x18\t \x01(\x02\x12\x1e\n\x03put\x18\n \x01(\x0b\x32\x11.overnight.Strike\x12\x1f\n\x04\x63\x61ll\x18\x0b \x01(\x0b\x32\x11.overnight.Strike\x12\x13\n\x0b\x64iagnostics\x18\x0c \x03(\t\"\x8e\x01\n\x06Strike\x12\x0e\n\x06strike\x18\x01 \x01(\x02\x12\x0e\n\x06target\x18\x02 \x01(\x02\x12\r\n\x05\x64\x65lta\x18\x03 \x01(\x02\x12\x10\n\x08size_bid\x18\x04 \x01(\x03\x12\x10\n\x08size_ask\x18\x05 \x01(\x03\x12\x0e\n\x06spread\x18\x06 \x01(\x02\x12\x13\n\x0bspread_frac\x18\x07 \x01(\x02\x12\x0c\n\x04mark\x18\x08 \x01(\x02\"0\n\x04\x44\x61te\x12\x0c\n\x04year\x18\x01 \x01(\x05\x12\r\n\x05month\x18\x02 \x01(\x05\x12\x0b\n\x03\x64\x61y\x18\x03 \x01(\x05* \n\x0c\x45\x61rningsTime\x12\x07\n\x03\x41MC\x10\x00\x12\x07\n\x03\x42MO\x10\x01'
+  serialized_pb=b'\n\x18overnight/earnings.proto\x12\tovernight\"\x8f\x01\n\x06\x43onfig\x12\x0f\n\x07max_dte\x18\x01 \x01(\x01\x12\x11\n\tmax_delta\x18\x02 \x01(\x01\x12\x18\n\x10volume_threshold\x18\x03 \x01(\x03\x12\x1c\n\x14min_strangle_credits\x18\x04 \x01(\x01\x12\x17\n\x0fmax_spread_frac\x18\x05 \x01(\x01\x12\x10\n\x08min_size\x18\x06 \x01(\x05\"5\n\x0c\x45\x61rningsList\x12%\n\x08\x65\x61rnings\x18\x01 \x03(\x0b\x32\x13.overnight.Earnings\"\x9e\x02\n\x08\x45\x61rnings\x12\x12\n\nunderlying\x18\x01 \x01(\t\x12\x0c\n\x04name\x18\x02 \x01(\t\x12\r\n\x05price\x18\x03 \x01(\x01\x12\x11\n\tyear_high\x18\x04 \x01(\x01\x12\x10\n\x08year_low\x18\x05 \x01(\x01\x12\x16\n\x0epercent_change\x18\x06 \x01(\x01\x12\x0e\n\x06volume\x18\x07 \x01(\x03\x12*\n\x0b\x65xpirations\x18\x08 \x03(\x0b\x32\x15.overnight.Expiration\x12\x12\n\nquote_time\x18\t \x01(\x03\x12.\n\rearnings_time\x18\n \x01(\x0e\x32\x17.overnight.EarningsTime\x12\x0f\n\x07success\x18\x0b \x01(\x08\x12\x13\n\x0b\x64iagnostics\x18\x0c \x03(\t\"\x93\x02\n\nExpiration\x12\x1d\n\x04\x64\x61te\x18\x01 \x01(\x0b\x32\x0f.overnight.Date\x12\x0c\n\x04\x64\x61ys\x18\x02 \x01(\x05\x12\x12\n\nis_regular\x18\x03 \x01(\x08\x12\x13\n\x0bstrangle_cr\x18\x04 \x01(\x01\x12\x0e\n\x06\x61tm_iv\x18\x05 \x01(\x01\x12\x13\n\x0b\x65m_straddle\x18\x06 \x01(\x01\x12\x12\n\nem_implied\x18\x07 \x01(\x01\x12\x14\n\x0c\x65m_effective\x18\x08 \x01(\x01\x12\n\n\x02\x65m\x18\t \x01(\x01\x12\x1e\n\x03put\x18\n \x01(\x0b\x32\x11.overnight.Strike\x12\x1f\n\x04\x63\x61ll\x18\x0b \x01(\x0b\x32\x11.overnight.Strike\x12\x13\n\x0b\x64iagnostics\x18\x0c \x03(\t\"\x8e\x01\n\x06Strike\x12\x0e\n\x06strike\x18\x01 \x01(\x01\x12\x0e\n\x06target\x18\x02 \x01(\x01\x12\r\n\x05\x64\x65lta\x18\x03 \x01(\x01\x12\x10\n\x08size_bid\x18\x04 \x01(\x03\x12\x10\n\x08size_ask\x18\x05 \x01(\x03\x12\x0e\n\x06spread\x18\x06 \x01(\x01\x12\x13\n\x0bspread_frac\x18\x07 \x01(\x01\x12\x0c\n\x04mark\x18\x08 \x01(\x01\"0\n\x04\x44\x61te\x12\x0c\n\x04year\x18\x01 \x01(\x05\x12\r\n\x05month\x18\x02 \x01(\x05\x12\x0b\n\x03\x64\x61y\x18\x03 \x01(\x05* \n\x0c\x45\x61rningsTime\x12\x07\n\x03\x41MC\x10\x00\x12\x07\n\x03\x42MO\x10\x01'
 )
 
 _EARNINGSTIME = _descriptor.EnumDescriptor(
@@ -43,8 +43,8 @@ _EARNINGSTIME = _descriptor.EnumDescriptor(
   ],
   containing_type=None,
   serialized_options=None,
-  serialized_start=856,
-  serialized_end=888,
+  serialized_start=1002,
+  serialized_end=1034,
 )
 _sym_db.RegisterEnumDescriptor(_EARNINGSTIME)
 
@@ -52,6 +52,73 @@ EarningsTime = enum_type_wrapper.EnumTypeWrapper(_EARNINGSTIME)
 AMC = 0
 BMO = 1
 
+
+
+_CONFIG = _descriptor.Descriptor(
+  name='Config',
+  full_name='overnight.Config',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  create_key=_descriptor._internal_create_key,
+  fields=[
+    _descriptor.FieldDescriptor(
+      name='max_dte', full_name='overnight.Config.max_dte', index=0,
+      number=1, type=1, cpp_type=5, label=1,
+      has_default_value=False, default_value=float(0),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='max_delta', full_name='overnight.Config.max_delta', index=1,
+      number=2, type=1, cpp_type=5, label=1,
+      has_default_value=False, default_value=float(0),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='volume_threshold', full_name='overnight.Config.volume_threshold', index=2,
+      number=3, type=3, cpp_type=2, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='min_strangle_credits', full_name='overnight.Config.min_strangle_credits', index=3,
+      number=4, type=1, cpp_type=5, label=1,
+      has_default_value=False, default_value=float(0),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='max_spread_frac', full_name='overnight.Config.max_spread_frac', index=4,
+      number=5, type=1, cpp_type=5, label=1,
+      has_default_value=False, default_value=float(0),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='min_size', full_name='overnight.Config.min_size', index=5,
+      number=6, type=5, cpp_type=1, label=1,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  serialized_options=None,
+  is_extendable=False,
+  syntax='proto2',
+  extension_ranges=[],
+  oneofs=[
+  ],
+  serialized_start=40,
+  serialized_end=183,
+)
 
 
 _EARNINGSLIST = _descriptor.Descriptor(
@@ -81,8 +148,8 @@ _EARNINGSLIST = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=39,
-  serialized_end=92,
+  serialized_start=185,
+  serialized_end=238,
 )
 
 
@@ -110,28 +177,28 @@ _EARNINGS = _descriptor.Descriptor(
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
       name='price', full_name='overnight.Earnings.price', index=2,
-      number=3, type=2, cpp_type=6, label=1,
+      number=3, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
       name='year_high', full_name='overnight.Earnings.year_high', index=3,
-      number=4, type=2, cpp_type=6, label=1,
+      number=4, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
       name='year_low', full_name='overnight.Earnings.year_low', index=4,
-      number=5, type=2, cpp_type=6, label=1,
+      number=5, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
       name='percent_change', full_name='overnight.Earnings.percent_change', index=5,
-      number=6, type=2, cpp_type=6, label=1,
+      number=6, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -190,8 +257,8 @@ _EARNINGS = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=95,
-  serialized_end=381,
+  serialized_start=241,
+  serialized_end=527,
 )
 
 
@@ -226,42 +293,42 @@ _EXPIRATION = _descriptor.Descriptor(
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
       name='strangle_cr', full_name='overnight.Expiration.strangle_cr', index=3,
-      number=4, type=2, cpp_type=6, label=1,
+      number=4, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
       name='atm_iv', full_name='overnight.Expiration.atm_iv', index=4,
-      number=5, type=2, cpp_type=6, label=1,
+      number=5, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
       name='em_straddle', full_name='overnight.Expiration.em_straddle', index=5,
-      number=6, type=2, cpp_type=6, label=1,
+      number=6, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
       name='em_implied', full_name='overnight.Expiration.em_implied', index=6,
-      number=7, type=2, cpp_type=6, label=1,
+      number=7, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
       name='em_effective', full_name='overnight.Expiration.em_effective', index=7,
-      number=8, type=2, cpp_type=6, label=1,
+      number=8, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
       name='em', full_name='overnight.Expiration.em', index=8,
-      number=9, type=2, cpp_type=6, label=1,
+      number=9, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -299,8 +366,8 @@ _EXPIRATION = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=384,
-  serialized_end=659,
+  serialized_start=530,
+  serialized_end=805,
 )
 
 
@@ -314,21 +381,21 @@ _STRIKE = _descriptor.Descriptor(
   fields=[
     _descriptor.FieldDescriptor(
       name='strike', full_name='overnight.Strike.strike', index=0,
-      number=1, type=2, cpp_type=6, label=1,
+      number=1, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
       name='target', full_name='overnight.Strike.target', index=1,
-      number=2, type=2, cpp_type=6, label=1,
+      number=2, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
       name='delta', full_name='overnight.Strike.delta', index=2,
-      number=3, type=2, cpp_type=6, label=1,
+      number=3, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -349,21 +416,21 @@ _STRIKE = _descriptor.Descriptor(
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
       name='spread', full_name='overnight.Strike.spread', index=5,
-      number=6, type=2, cpp_type=6, label=1,
+      number=6, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
       name='spread_frac', full_name='overnight.Strike.spread_frac', index=6,
-      number=7, type=2, cpp_type=6, label=1,
+      number=7, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
       name='mark', full_name='overnight.Strike.mark', index=7,
-      number=8, type=2, cpp_type=6, label=1,
+      number=8, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=float(0),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -380,8 +447,8 @@ _STRIKE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=662,
-  serialized_end=804,
+  serialized_start=808,
+  serialized_end=950,
 )
 
 
@@ -426,8 +493,8 @@ _DATE = _descriptor.Descriptor(
   extension_ranges=[],
   oneofs=[
   ],
-  serialized_start=806,
-  serialized_end=854,
+  serialized_start=952,
+  serialized_end=1000,
 )
 
 _EARNINGSLIST.fields_by_name['earnings'].message_type = _EARNINGS
@@ -436,6 +503,7 @@ _EARNINGS.fields_by_name['earnings_time'].enum_type = _EARNINGSTIME
 _EXPIRATION.fields_by_name['date'].message_type = _DATE
 _EXPIRATION.fields_by_name['put'].message_type = _STRIKE
 _EXPIRATION.fields_by_name['call'].message_type = _STRIKE
+DESCRIPTOR.message_types_by_name['Config'] = _CONFIG
 DESCRIPTOR.message_types_by_name['EarningsList'] = _EARNINGSLIST
 DESCRIPTOR.message_types_by_name['Earnings'] = _EARNINGS
 DESCRIPTOR.message_types_by_name['Expiration'] = _EXPIRATION
@@ -443,6 +511,13 @@ DESCRIPTOR.message_types_by_name['Strike'] = _STRIKE
 DESCRIPTOR.message_types_by_name['Date'] = _DATE
 DESCRIPTOR.enum_types_by_name['EarningsTime'] = _EARNINGSTIME
 _sym_db.RegisterFileDescriptor(DESCRIPTOR)
+
+Config = _reflection.GeneratedProtocolMessageType('Config', (_message.Message,), {
+  'DESCRIPTOR' : _CONFIG,
+  '__module__' : 'overnight.earnings_pb2'
+  # @@protoc_insertion_point(class_scope:overnight.Config)
+  })
+_sym_db.RegisterMessage(Config)
 
 EarningsList = _reflection.GeneratedProtocolMessageType('EarningsList', (_message.Message,), {
   'DESCRIPTOR' : _EARNINGSLIST,

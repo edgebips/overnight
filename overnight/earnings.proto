@@ -5,6 +5,41 @@ syntax = "proto2";
 
 package overnight;
 
+// Configuration of parameters.
+message Config {
+
+  // Maximum number of days to expiration to include in the regular terms, for
+  // earnings trades. This can be 40, or even 60 if you're feeling ambitious
+  // (and potentially ineffective).
+  optional double max_dte = 1;
+
+  // Maximum value for delta over which we never want to place a strike. This is
+  // used to cull out options with very few available strike prices, typically
+  // set to 0.20.
+  optional double max_delta = 2;
+
+  // Threshold under which we don't want to trade this product. Typical values
+  // would be 500k/shares.
+  optional int64 volume_threshold = 3;
+
+  // Minimum dollar in credits received for a single strangle. We don't like
+  // cheap implied vols, we look for decently juicy options. I like to use 0.40
+  // and decide.
+  optional double min_strangle_credits = 4;
+
+  // Maximum fraction the spread takes over the mark. For example, if the
+  // midpoint is 0.80 and the spread is 0.60, that fraction is 75% of the mark,
+  // and that's an indication of bad markets. This may be compared to averages
+  // of spreads and marks around the strike. This is used to filter out names
+  // with markets that are too wide.
+  optional double max_spread_frac = 5;
+
+  // Minimum bid or ask size present to consider placing a position on a strike.
+  // This can be set to one unless you want to ensure at least some minimum
+  // size, in which case you set it to a higher value.
+  optional int32 min_size = 6;
+}
+
 // A list of earnings (a container for the output file).
 message EarningsList {
   repeated Earnings earnings = 1;
@@ -21,12 +56,12 @@ message Earnings {
   optional string name = 2;
 
   // Current price of the underlying.
-  optional float price = 3;
+  optional double price = 3;
 
   // Stats on price history.
-  optional float year_high = 4;
-  optional float year_low = 5;
-  optional float percent_change = 6;
+  optional double year_high = 4;
+  optional double year_low = 5;
+  optional double percent_change = 6;
 
   // Volume traded today.
   optional int64 volume = 7;
@@ -66,20 +101,20 @@ message Expiration {
   optional bool is_regular = 3;
 
   // Credits received on a strangle for the position.
-  optional float strangle_cr = 4;
+  optional double strangle_cr = 4;
 
   // Vol implied from the ATM options.
-  optional float atm_iv = 5;
+  optional double atm_iv = 5;
 
   // Expected move (1SD @ 1d) estimate, from straddle price, and from the
   // implied vol (from BSM) of the options at term.
-  optional float em_straddle = 6;
-  optional float em_implied = 7;
-  optional float em_effective = 8;
+  optional double em_straddle = 6;
+  optional double em_implied = 7;
+  optional double em_effective = 8;
 
   // Effective expected move we calculated from the estimates above. This is
   // what's being used to manufacture the position proposal
-  optional float em = 9;
+  optional double em = 9;
 
   // Each position on a strangle.
   optional Strike put = 10;
@@ -93,27 +128,27 @@ message Expiration {
 message Strike {
 
   // The selected strike price.
-  optional float strike = 1;
+  optional double strike = 1;
 
   // The target price, based on the expected move.
-  optional float target = 2;
+  optional double target = 2;
 
   // The actual (interpolated) delta for that strike (not for the target).
-  optional float delta = 3;
+  optional double delta = 3;
 
   // The size on each side of the strike.
   optional int64 size_bid = 4;
   optional int64 size_ask = 5;
 
   // The spread at the strike.
-  optional float spread = 6;
+  optional double spread = 6;
 
   // The average spread of the strikes around the chosen strike.
-  optional float spread_frac = 7;
+  optional double spread_frac = 7;
 
   // The midpoint at the strike, based on bid/ask at that strike. Note that this
   // does not use put-call parity to estimate whether the spread is invalid.
-  optional float mark = 8;
+  optional double mark = 8;
 }
 
 message Date {

@@ -13,7 +13,7 @@
       <tr>
         <!-- <th colspan="8">Contract</th> -->
         <th colspan="2">{{e.underlying}}</th>
-        <th colspan="1">Volume: {{e.volume}}</th>
+        <th colspan="1">Volume: {{"{:,.0f}".format(e.volume)}}</th>
         <th colspan="5"><a href={{get_url(e.name)}}>{{clean_name(e.name)}}</a> </th>
         <th colspan="5">Put</th>
         <th colspan="1">Price</th>

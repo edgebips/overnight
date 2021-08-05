@@ -1,8 +1,8 @@
 #!/usr/bin/env make
 
-TODAY = $(shell date +%Y%m%d)
-EARNINGS_TODAY = $(HOME)/trading/earnings/earnings-$(TODAY).csv
-EARNINGS_OUTPUT = $(HOME)/trading/earnings/earnings-$(TODAY)
+TODAY ?= $(shell date +%Y%m%d)
+SYMBOLS = $(HOME)/trading/earnings/earnings-$(TODAY).csv
+OUTPUT_DIR = $(HOME)/trading/earnings/$(TODAY)
 
 all:
 
@@ -12,14 +12,10 @@ overnight/earnings_pb2.py: overnight/earnings.proto
 	protoc -I . --python_out . --proto_path . $<
 
 fetch overnight-fetch:
-	overnight-fetch --no-headless --output=$(EARNINGS_TODAY)
+	overnight-fetch --no-headless --output=$(SYMBOLS)
 
-# Note: Rate-limit the first one, and not the second.
-# TODO(blais): Handle rate limiting in the API.
-overnight: $(EARNINGS_TODAY:.csv=.overnight_all) $(EARNINGS_TODAY:.csv=.overnight)
+eval overnight:
+	overnight -v --ameritrade-cache=/tmp/td --csv-filename=$(SYMBOLS) --output=$(OUTPUT_DIR)
 
-# $(EARNINGS_TODAY:.csv=.overnight_all):
-# 	overnight -r -n --ameritrade-cache=/tmp/td -v --csv-filename=$(EARNINGS_TODAY) --output=$(EARNINGS_OUTPUT) | tee $(EARNINGS_TODAY:.csv=.overnight_all)
-
-$(EARNINGS_TODAY:.csv=.overnight):
-	overnight --ameritrade-cache=/tmp/td -v --csv-filename=$(EARNINGS_TODAY) --output=$(EARNINGS_OUTPUT)
+share:
+	publish-tmp earnings-$(TODAY) $(OUTPUT_DIR)

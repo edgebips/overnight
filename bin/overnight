@@ -179,9 +179,8 @@ def safe_quantize(value: Decimal, quantum: Decimal) -> Decimal:
     return value.quantize(quantum)
 
 
-def get_term(chain: Chain, expi: Expi,
-             max_delta: Decimal) -> tuple[list[str], Optional[list], pb.Expiration]:
-    """Get data for one position."""
+def get_term(chain: Chain, expi: Expi, config: pb.Config) -> pb.Expiration:
+    """Get data for one expiration."""
 
     # Error messages returned.
     x = pb.Expiration()
@@ -209,45 +208,45 @@ def get_term(chain: Chain, expi: Expi,
 
     x.put.strike, index = get_closest_strike(expi.puts, put_target_strike)
     put_strike = expi.puts[index]
-    if put_strike['bidSize'] == 0 or put_strike['askSize'] == 0:
+    if put_strike['bidSize'] < config.min_size or put_strike['askSize'] < config.min_size:
         x.diagnostics.append(
             f"WARNING: No size on puts ({put_strike['bidSize']} x {put_strike['askSize']})")
     x.call.strike, index = get_closest_strike(expi.calls, call_target_strike)
     call_strike = expi.calls[index]
-    if call_strike['bidSize'] == 0 or call_strike['askSize'] == 0:
-        x.diagnostics.append(
-            f"WARNING: No size on calls ({call_strike['bidSize']} x {call_strike['askSize']})")
+    if call_strike['bidSize'] < config.min_size or call_strike['askSize'] < config.min_size:
+        x.diagnostics.append(f"WARNING: No size on calls "
+                             f"({call_strike['bidSize']} x {call_strike['askSize']})")
 
     x.put.mark = put_strike['mark']
     x.call.mark = call_strike['mark']
 
     x.put.spread = put_strike['ask'] - put_strike['bid']
     x.call.spread = call_strike['ask'] - call_strike['bid']
-    x.put.spread_frac = x.put.spread / x.put.mark
-    x.call.spread_frac = x.call.spread / x.call.mark
+    x.put.spread_frac = x.put.spread / x.put.mark if x.put.mark else 0
+    x.call.spread_frac = x.call.spread / x.call.mark if x.call.mark else 0
 
     if put_strike['delta'] == 'NaN' or call_strike['delta'] == 'NaN':
         x.diagnostics.append("ERROR: Delta is NaN")
 
     x.put.delta = safe_quantize(put_strike['delta'], Q)
     x.call.delta = safe_quantize(call_strike['delta'], Q)
-    if abs(x.put.delta) > max_delta or abs(x.call.delta) > max_delta:
-        x.diagnostics.append(f"WARNING: Delta is too large (>{max_delta})")
+    if abs(x.put.delta) > config.max_delta or abs(x.call.delta) > config.max_delta:
+        x.diagnostics.append(f"WARNING: Delta is too large (>{config.max_delta})")
 
     x.strangle_cr = x.put.mark + x.call.mark
 
     # Check for enough credits.
-    min_credits = 0.4
-    if x.strangle_cr < 0.4:
+    if x.strangle_cr < config.min_strangle_credits:
         x.diagnostics.append(
-            f"WARNING: Not enough credits received (<{min_credits})")
+            f"WARNING: Not enough credits received (<{config.min_strangle_credits})")
 
     # Check relative spread size.
-    max_spread_frac = 0.50
-    if x.put.spread_frac > max_spread_frac:
-        x.diagnostics.append(f"WARNING: Put spreads are wide (>{max_spread_frac:.0%})")
-    if x.call.spread_frac > max_spread_frac:
-        x.diagnostics.append(f"WARNING: Call spreads are wide (>{max_spread_frac:.0%})")
+    if x.put.spread_frac > config.max_spread_frac:
+        x.diagnostics.append(
+            f"WARNING: Put spreads are wide (>{config.max_spread_frac:.0%})")
+    if x.call.spread_frac > config.max_spread_frac:
+        x.diagnostics.append(
+            f"WARNING: Call spreads are wide (>{config.max_spread_frac:.0%})")
 
     return x
 
@@ -260,7 +259,7 @@ def find_regular_expis(chain: Chain) -> Iterator[Expi]:
 
 
 def analyze_earnings(chain_json: Json,
-                     max_dte: int=60) -> pb.Earnings:
+                     config: pb.Config) -> pb.Earnings:
     """Run the analysis on a single earnings name."""
 
     earnings = pb.Earnings()
@@ -285,116 +284,21 @@ def analyze_earnings(chain_json: Json,
 
     # Get data for all regular expirations up to a maximum.
     for expi in find_regular_expis(chain):
-        if expi.info['daysToExpiration'] > max_dte:
+        if expi.info['daysToExpiration'] > config.max_dte:
             break
         expi_list.append(expi)
 
     # Process each fo the expirations.
     for expi in expi_list:
         if expi is not None:
-            earnings.expirations.append(get_term(chain, expi, 0.20))
+            earnings.expirations.append(get_term(chain, expi, config))
 
     # Check volume.
-    volume_threshold = 100_000
-    if earnings.volume < volume_threshold:
+    if earnings.volume < config.volume_threshold:
         earnings.diagnostics.append(
-            f"WARNING: Low volume (less than {volume_threshold})")
+            f"WARNING: Low volume (less than {config.volume_threshold})")
 
     return earnings
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    ameritrade.add_args(parser)
-    parser.add_argument('symbols', nargs='*',
-                        help='Symbols to process')
-    parser.add_argument('--csv-filename', '-f', action='store',
-                        help='CSV filename to read symbols from')
-    parser.add_argument('-v', '--verbose', action='store_true')
-    parser.add_argument('-r', '--rate-limit', action='store_true',
-                        help="Turn on rate limitations for large lists")
-
-    # parser.add_argument('-n', '--filter', action='store_false', default=True,
-    #                     help="Turn off filtering")
-
-    parser.add_argument('--output', action='store',
-                        help='Output directory to write results to.')
-    args = parser.parse_args()
-    config = ameritrade.config_from_args(args)
-    td = ameritrade.open(config)
-
-    if args.verbose:
-        logging.basicConfig(level=logging.INFO, format='%(levelname)-8s: %(message)s')
-
-    symbols = []
-    if args.csv_filename:
-        symbols_table = petl.fromcsv(args.csv_filename)
-        symbols.extend(symbols_table.sort('Symbol').values('Symbol'))
-    if args.symbols:
-        symbols.extend(args.symbols)
-
-    # TODO(blais): Look for various symbol column names, be more flexible.
-    earlist = pb.EarningsList()
-
-    header = ['symbol', 'description', 'volume'] + TERM_HEADER + ['url']
-    rows = [header]
-    max_date = datetime.date.today() + datetime.timedelta(days=90)
-    pr = lambda *args: None
-    for symbol in symbols:
-        logging.info(f",--{symbol}---------------------------------------------------------------")
-        # Fetch the option chain.
-        while True:
-            chain_json = td.GetOptionChain(symbol=symbol,
-                                           includeQuotes=True,
-                                           toDate=max_date)
-
-            # Half-assed recovery from rate limit hit.
-            # TODO(blais): Properly handle this in the API code.
-            if args.rate_limit:
-                time.sleep(0.1)
-            if ('error' in chain_json and
-                re.match('transactions per seconds restriction reached', chain_json['error'])):
-                time.sleep(5)
-                continue
-            break
-
-        # Handle errors fetching.
-        earnings = earlist.earnings.add()
-        earnings.underlying = symbol
-        if chain_json['status'] == 'FAILED' or 'callExpDateMap' not in chain_json:
-            logging.warning(f"Could not get chain data for {symbol}")
-            earnings.success = False
-            earnings.diagnostics.append(f"ERROR: Could not get chain data for {symbol}")
-            continue
-        else:
-            earnings.success = True
-            earnings.CopyFrom(analyze_earnings(chain_json))
-
-    # Render output.
-    if not args.output:
-        print(earlist)
-    else:
-        # Create root dir.
-        os.makedirs(args.output, exist_ok=True)
-        with open(path.join(args.output, "earnings.pbtxt"), "w") as outfile:
-            print(earlist, file=outfile)
-
-        # Copy the input symbols.
-        with open(path.join(args.output, "symbols.csv"), "w") as outfile:
-            wr = csv.writer(outfile)
-            wr.writerows([(symbol,) for symbol in symbols])
-
-        # Render to a single HTML page.
-        with open(path.join(args.output, "earnings.html"), "w") as outfile:
-            render_earnings_to_html(earlist, outfile)
-
-        # Filter down the list to tradeable ones only and render to another page.
-        earlist_tradeable = pb.EarningsList()
-        for earnings in earlist.earnings:
-            if is_tradeable(earnings):
-                earlist_tradeable.earnings.append(earnings)
-        with open(path.join(args.output, "earnings-tradeable.html"), "w") as outfile:
-            render_earnings_to_html(earlist_tradeable, outfile)
 
 
 def is_tradeable(earnings: pb.Earnings):
@@ -426,6 +330,107 @@ def render_earnings_to_html(earlist: pb.EarningsList, outfile: io.IOBase):
     index = env.get_template("index.html")
     outfile.write(index.render(earlist=earlist,
                                date=datetime.date.today()))
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    ameritrade.add_args(parser)
+    parser.add_argument('symbols', nargs='*',
+                        help='Symbols to process')
+    parser.add_argument('--csv-filename', '-f', action='store',
+                        help='CSV filename to read symbols from')
+    parser.add_argument('-v', '--verbose', action='store_true')
+    parser.add_argument('-r', '--rate-limit', action='store_true',
+                        help="Turn on rate limitations for large lists")
+    parser.add_argument('--output', action='store',
+                        help='Output directory to write results to.')
+    args = parser.parse_args()
+    config = ameritrade.config_from_args(args)
+    td = ameritrade.open(config)
+
+    if args.verbose:
+        logging.basicConfig(level=logging.INFO, format='%(levelname)-8s: %(message)s')
+
+    # Fixed configuration.
+    # TODO(blais): Allow reading this from a file.
+    config = pb.Config()
+    config.max_dte = 60
+    config.max_delta = 0.20
+    config.volume_threshold = 100_000
+    config.min_strangle_credits = 0.40
+    config.max_spread_frac = 0.50
+    config.min_size = 1
+
+    symbols = []
+    if args.csv_filename:
+        symbols_table = petl.fromcsv(args.csv_filename)
+        symbols.extend(symbols_table.sort('Symbol').values('Symbol'))
+    if args.symbols:
+        symbols.extend(args.symbols)
+
+    earlist_all = pb.EarningsList()
+
+    header = ['symbol', 'description', 'volume'] + TERM_HEADER + ['url']
+    rows = [header]
+    max_date = datetime.date.today() + datetime.timedelta(days=89)
+    pr = lambda *args: None
+    for symbol in symbols:
+        logging.info(f",--{symbol}---------------------------------------------------------------")
+        # Fetch the option chain.
+        while True:
+            chain_json = td.GetOptionChain(symbol=symbol,
+                                           includeQuotes=True,
+                                           toDate=max_date)
+
+            # Half-assed recovery from rate limit hit.
+            # TODO(blais): Properly handle this in the API code.
+            if args.rate_limit:
+                time.sleep(0.1)
+            if ('error' in chain_json and
+                re.search('transactions per seconds restriction reached',
+                          chain_json['error'])):
+                logging.warning("Rate-limit hit; throttling for 5 secs...")
+                time.sleep(5)
+                continue
+            break
+
+        # Handle errors fetching.
+        earnings = earlist_all.earnings.add()
+        earnings.underlying = symbol
+        if chain_json['status'] == 'FAILED' or 'callExpDateMap' not in chain_json:
+            logging.warning(f"Could not get chain data for {symbol}")
+            earnings.success = False
+            earnings.diagnostics.append(f"ERROR: Could not get chain data for {symbol}")
+            continue
+        else:
+            earnings.success = True
+            earnings.CopyFrom(analyze_earnings(chain_json, config))
+
+    # Render output.
+    if not args.output:
+        print(earlist_all)
+    else:
+        # Create root dir.
+        os.makedirs(args.output, exist_ok=True)
+        with open(path.join(args.output, "earnings.pbtxt"), "w") as outfile:
+            print(earlist_all, file=outfile)
+
+        # Copy the input symbols.
+        with open(path.join(args.output, "symbols.csv"), "w") as outfile:
+            wr = csv.writer(outfile)
+            wr.writerows([(symbol,) for symbol in symbols])
+
+        # Render to a single HTML page.
+        with open(path.join(args.output, "earnings-all.html"), "w") as outfile:
+            render_earnings_to_html(earlist_all, outfile)
+
+        # Filter down the list to tradeable ones only and render to another page.
+        earlist = pb.EarningsList()
+        for earnings in earlist_all.earnings:
+            if is_tradeable(earnings):
+                earlist.earnings.append(earnings)
+        with open(path.join(args.output, "earnings.html"), "w") as outfile:
+            render_earnings_to_html(earlist, outfile)
 
 
 if __name__ == '__main__':
