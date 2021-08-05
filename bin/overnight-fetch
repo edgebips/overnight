@@ -47,17 +47,19 @@ def fetch_earnings_whispers_list(headless: bool) -> str:
     div = driver.find_element(By.ID, 'chooseview')
     label = div.find_element(By.CLASS_NAME, 'switch-label-all')
     label.click()
+    time.sleep(0.5)
 
     # Choose AMC.
     div = driver.find_element(By.ID, 'beforaft')
     label = div.find_element(By.CLASS_NAME, 'switch-label-amc')
     label.click()
+    time.sleep(0.5)
 
     # Open up the bottom list and wait to ensure it loads.
     # TODO(blais): Find the right element to wait on.
     div = driver.find_element(By.ID, 'showmore')
     div.click()
-    time.sleep(3)
+    time.sleep(1)
 
     # Get the list of AMC tickers.
     tickers_amc = get_tickers(driver)
@@ -65,7 +67,7 @@ def fetch_earnings_whispers_list(headless: bool) -> str:
     # Click on the next day.
     nextday = driver.find_element(By.CLASS_NAME, "nottoday")
     nextday.click()
-    time.sleep(3)
+    time.sleep(1)
 
     # Choose BMO.
     div = driver.find_element(By.ID, 'beforaft')
@@ -76,7 +78,7 @@ def fetch_earnings_whispers_list(headless: bool) -> str:
     # TODO(blais): Find the right element to wait on.
     div = driver.find_element(By.ID, 'showmore')
     div.click()
-    time.sleep(3)
+    time.sleep(1)
 
     # Get the list of BMO tickers.
     tickers_bmo = get_tickers(driver)
