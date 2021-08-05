@@ -1,17 +1,8 @@
-<!-- Template for a single earnings play. -->
-
 <div id="{{e.underlying}}" class="earnings">
   <!-- <h2>{{e.underlying}}</h2> -->
-
   <table>
     <thead>
-      <!-- 
       <tr>
-        <th colspan="21">{{e.underlying}} &ndash; <a href={{e.url}}>{{e.name}}</a> </th>
-      </tr>
-      -->
-      <tr>
-        <!-- <th colspan="8">Contract</th> -->
         <th colspan="2">{{e.underlying}}</th>
         <th colspan="1">Volume: {{"{:,.0f}".format(e.volume)}}</th>
         <th colspan="5"><a href={{get_url(e.name)}}>{{clean_name(e.name)}}</a> </th>
