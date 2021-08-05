@@ -19,3 +19,6 @@ eval overnight:
 
 share:
 	publish-tmp earnings-$(TODAY) $(OUTPUT_DIR)
+
+conflicts:
+	overnight-conflicts $(SYMBOLS)

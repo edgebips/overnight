@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+"""Identify trades with upcoming earnings that have conflicts with my positions.
+"""
+__copyright__ = "Copyright (C) 2021  Martin Blais"
+
+from typing import Optional
+
+import click
+
+from goodkids import session as sesslib
+from goodkids import utils
+from johnny.base.etl import petl
+from johnny.sources.tastyworks_csv import symbols as twsym
+
+
+@click.command()
+@click.argument('symbols_filename', type=click.Path(exists=True))
+@click.option('--username', '-u', help="Tastyworks username.")
+@click.option('--password') # Tastyworks password.
+def main(symbols_filename: str, username: Optional[str], password: Optional[str]):
+    # Get the account.
+    session = sesslib.get_session(username, password)
+    accounts = utils.get_accounts(session)
+
+    # Find the set of underlyigs for which I have a position.
+    position_underlyings = set()
+    for account in accounts:
+        accid = account['account-number']
+        resp = session.relget(f'/accounts/{accid}/positions')
+        for position in utils.get_data(resp)['items']:
+            inst = twsym.ParseSymbol(position['symbol'])
+            position_underlyings.add(inst.underlying)
+
+    # Read a list of symbols.
+    symbols_table = petl.fromcsv(symbols_filename)
+    earnings_underlyings = set(symbols_table.values('Symbol'))
+
+    # Render the common set.
+    conflicts = position_underlyings & earnings_underlyings
+    if conflicts:
+        print("# Overlapping positions with earnings:")
+        for stock in conflicts:
+            print(stock)
+
+
+if __name__ == '__main__':
+    main()
