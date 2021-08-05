@@ -35,12 +35,11 @@ from overnight import earnings_pb2 as pb
 Json = Union[Dict[str, 'Json'], List['Json'], str, int, float]
 ZERO = Decimal('0')
 Q = Decimal('0.01')
-Qd = Decimal('0.1')
-Q1 = Decimal('1.')
 
 
 # Data for each strike in a chain.
 StrikeData = dict[str, Any]
+
 
 class Expi(NamedTuple):
     """Data for one expiration."""
@@ -48,16 +47,11 @@ class Expi(NamedTuple):
     puts: list[StrikeData]
     calls: list[StrikeData]
 
+
 class Chain(NamedTuple):
     """Normalized data for an options chain."""
     info: dict[str, Any]
     expis: dict[datetime.date, Expi]
-
-
-def get_front_expiration(chain_json: Json):
-    """Return the front expiration from the chain."""
-    strike_map = first(chain_json['callExpDateMap'].values())
-    return [data[0] for data in strike_map.values()]
 
 
 def normalize_chain(chain_json: Json) -> Chain:
@@ -88,17 +82,16 @@ def normalize_chain(chain_json: Json) -> Chain:
     return Chain(chain_info, expis)
 
 
-def filter_chain(strikes: list[StrikeData]) -> Table:
-    """Filter the options chains for relevant deltas and produce a table."""
-    return (petl.fromdicts(strikes)
-            .cut('symbol', 'strikePrice', 'bid', 'ask', 'mark', 'last',
-                 'theoreticalOptionValue',
-                 'askSize', 'bidSize', 'lastSize', 'openInterest', 'totalVolume',
-                 'volatility', 'delta', 'gamma', 'theta', 'vega', 'rho', 'description'))
-
-
 def is_regular_expiration(expi: Expi) -> bool:
+    """Return true if this is a regular expiration."""
     return expi.info['expirationType'] == 'R'
+
+
+def find_regular_expirations(chain: Chain) -> Iterator[Expi]:
+    """Return the first regular expiration."""
+    for date, expi in sorted(chain.expis.items()):
+        if is_regular_expiration(expi):
+            yield expi
 
 
 def get_closest_strike(strikes: list[StrikeData],
@@ -118,11 +111,11 @@ def index_with_default(alist: list[Any], index: int, default: Any) -> Any:
         return default
 
 
-def expected_move(chain_info, expi: Expi) -> Optional[tuple[Decimal, Decimal]]:
+def estimate_expected_move(chain_info, expi: Expi) -> Optional[tuple[Decimal, Decimal]]:
     """Compute estimates of the expected move."""
 
+    # Get the closest strikes for a series of concentric straddles.
     underlyingPrice = chain_info['underlying']['mark']
-
     try:
         putStrikePrice, index = get_closest_strike(expi.puts, underlyingPrice)
         put0 = expi.puts[index]
@@ -136,7 +129,7 @@ def expected_move(chain_info, expi: Expi) -> Optional[tuple[Decimal, Decimal]]:
     except IndexError:
         return
 
-    # Q: Is averaging the square better?
+    # Q: Check averaging the square.
     if call0['volatility'] == 'NaN' or put0['volatility'] == 'NaN':
         return
     atm_volatility = (call0['volatility'] + put0['volatility'])/2 / 100
@@ -157,23 +150,19 @@ def expected_move(chain_info, expi: Expi) -> Optional[tuple[Decimal, Decimal]]:
 
 
 def get_company_description(chain: Chain) -> str:
-    """Return a clean company name."""
+    """Return the company name."""
     return chain.info['underlying']['description']
 
 
-TERM_HEADER = [
-    'days', 'expdate', 'regular', 'strangle',
-    'em', 'em_iv', 'em_avg', 'atm_iv',
-    'psprpct', 'pspread', 'pmark',
-    'pdelta', 'ptarget', 'pstrike',
-    'price',
-    'cstrike', 'ctarget', 'cdelta',
-    'cmark', 'cspread', 'csprpct',
-]
-Term = collections.namedtuple('Term', TERM_HEADER)
+def get_clean_name(name: str) -> str:
+    """Return a cleaned up version of the name, removing common suffixes."""
+    return (re.sub(r"(Common Stock|Registered Shares|Inc\.?|S\.A\.|Class [ABC12].*)",
+                   "", name)
+            .strip(' -,'))
 
 
 def safe_quantize(value: Decimal, quantum: Decimal) -> Decimal:
+    """Quantize the given value, supporting exceptions for NaNs."""
     if value == 'NaN':
         return ZERO
     return value.quantize(quantum)
@@ -192,7 +181,7 @@ def get_term(chain: Chain, expi: Expi, config: pb.Config) -> pb.Expiration:
     x.date.month = expiration.month
     x.date.day = expiration.day
 
-    em_data = expected_move(chain.info, expi)
+    em_data = estimate_expected_move(chain.info, expi)
     if em_data is None:
         x.diagnostics.append("ERROR: Could not calculate EM")
         return x
@@ -252,13 +241,6 @@ def get_term(chain: Chain, expi: Expi, config: pb.Config) -> pb.Expiration:
     return x
 
 
-def find_regular_expis(chain: Chain) -> Iterator[Expi]:
-    """Return the first regular expiration."""
-    for date, expi in sorted(chain.expis.items()):
-        if is_regular_expiration(expi):
-            yield expi
-
-
 def analyze_earnings(chain_json: Json,
                      config: pb.Config) -> pb.Earnings:
     """Run the analysis on a single earnings name."""
@@ -284,7 +266,7 @@ def analyze_earnings(chain_json: Json,
         expi_list.append(first_expi)
 
     # Get data for all regular expirations up to a maximum.
-    for expi in find_regular_expis(chain):
+    for expi in find_regular_expirations(chain):
         if expi.info['daysToExpiration'] > config.max_dte:
             break
         expi_list.append(expi)
@@ -308,15 +290,10 @@ def is_tradeable(earnings: pb.Earnings):
             any(not expi.diagnostics for expi in earnings.expirations))
 
 
-def clean_name(name: str) -> str:
-    """Return a cleaned up version of the name, removing common suffixes."""
-    return (re.sub(r"(Common Stock|Registered Shares|Inc\.?|S\.A\.|Class [ABC12].*)",
-                   "", name)
-            .strip(' -,'))
-
 def get_url(name: str) -> str:
     """Return a URL for searching for what the company does.."""
-    return "https://www.google.com/search?q={}".format(urllib.parse.quote(clean_name(name)))
+    return "https://www.google.com/search?q={}".format(
+        urllib.parse.quote(get_clean_name(name)))
 
 
 def render_earnings_to_html(earlist: pb.EarningsList, outfile: io.IOBase):
@@ -326,7 +303,7 @@ def render_earnings_to_html(earlist: pb.EarningsList, outfile: io.IOBase):
         loader=jinja2.PackageLoader("overnight", ""),
         autoescape=jinja2.select_autoescape())
     env.globals['get_url'] = get_url
-    env.globals['clean_name'] = clean_name
+    env.globals['get_clean_name'] = get_clean_name
 
     index = env.get_template("index.html")
     outfile.write(index.render(earlist=earlist,
@@ -366,27 +343,8 @@ def render_files(symbols: List[str], config: pb.Config, earlist_all: pb.Earnings
         render_earnings_to_html(earlist, outfile)
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    ameritrade.add_args(parser)
-    parser.add_argument('symbols', nargs='*',
-                        help='Symbols to process')
-    parser.add_argument('--csv-filename', '-f', action='store',
-                        help='CSV filename to read symbols from')
-    parser.add_argument('-v', '--verbose', action='store_true')
-    parser.add_argument('-r', '--rate-limit', action='store_true',
-                        help="Turn on rate limitations for large lists")
-    parser.add_argument('--output', action='store',
-                        help='Output directory to write results to.')
-    args = parser.parse_args()
-    config = ameritrade.config_from_args(args)
-    td = ameritrade.open(config)
-
-    if args.verbose:
-        logging.basicConfig(level=logging.INFO, format='%(levelname)-8s: %(message)s')
-
-    # Fixed configuration.
-    # TODO(blais): Allow reading this from a file.
+def initialize_default_config() -> pb.Config:
+    """Create an initialize a default configuration."""
     config = pb.Config()
     config.max_dte = 60
     config.max_delta = 0.20
@@ -395,7 +353,60 @@ def main():
     config.max_spread_frac = 0.50
     config.min_size = 1
     config.strangle_em_width = 2.0
+    return config
 
+
+def fetch_chain(td: ameritrade.AmeritradeAPI, rate_limit, **kwargs):
+    """Fetch a chain, with poor man's handling of rate limits."""
+
+    # Fetch the option chain.
+    while True:
+        chain_json = td.GetOptionChain(**kwargs)
+
+        # Half-assed recovery from rate limit hit.
+        # TODO(blais): Properly handle this in the API code.
+        if rate_limit:
+            time.sleep(0.1)
+        if ('error' in chain_json and
+            re.search('transactions per seconds restriction reached',
+                      chain_json['error'])):
+            logging.warning("Rate-limit hit; throttling for 5 secs...")
+            time.sleep(5)
+            continue
+        break
+    return chain_json
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    ameritrade.add_args(parser)
+
+    parser.add_argument('symbols', nargs='*',
+                        help='Symbols to process')
+
+    parser.add_argument('--csv-filename', '-f', action='store',
+                        help='CSV filename to read symbols from')
+
+    parser.add_argument('-v', '--verbose', action='store_true')
+
+    parser.add_argument('-r', '--rate-limit', action='store_true',
+                        help="Turn on rate limitations for large lists")
+
+    parser.add_argument('--output', action='store',
+                        help='Output directory to write results to.')
+
+    args = parser.parse_args()
+    config = ameritrade.config_from_args(args)
+    td = ameritrade.open(config)
+
+    if args.verbose:
+        logging.basicConfig(level=logging.INFO, format='%(levelname)-8s: %(message)s')
+
+    # Initialize fixed configuration.
+    # TODO(blais): Allow reading this from an input file.
+    config = initialize_default_config()
+
+    # Read a list of symbols.
     symbols = []
     if args.csv_filename:
         symbols_table = petl.fromcsv(args.csv_filename)
@@ -403,33 +414,19 @@ def main():
     if args.symbols:
         symbols.extend(args.symbols)
 
+    # Iterate through all the symbols and process them.
     earlist_all = pb.EarningsList()
-
-    header = ['symbol', 'description', 'volume'] + TERM_HEADER + ['url']
-    rows = [header]
     max_date = datetime.date.today() + datetime.timedelta(days=config.max_dte + 7)
     for symbol in symbols:
         logging.info(f",--{symbol}---------------------------------------------------------------")
 
-        # Fetch the option chain.
-        while True:
-            chain_json = td.GetOptionChain(symbol=symbol,
-                                           includeQuotes=True,
-                                           toDate=max_date)
+        # Fetch the chain.
+        chain_json = fetch_chain(td, args.rate_limit,
+                                 symbol=symbol,
+                                 includeQuotes=True,
+                                 toDate=max_date)
 
-            # Half-assed recovery from rate limit hit.
-            # TODO(blais): Properly handle this in the API code.
-            if args.rate_limit:
-                time.sleep(0.1)
-            if ('error' in chain_json and
-                re.search('transactions per seconds restriction reached',
-                          chain_json['error'])):
-                logging.warning("Rate-limit hit; throttling for 5 secs...")
-                time.sleep(5)
-                continue
-            break
-
-        # Handle errors fetching.
+        # Handle errors.
         earnings = earlist_all.earnings.add()
         earnings.underlying = symbol
         if chain_json['status'] == 'FAILED' or 'callExpDateMap' not in chain_json:
