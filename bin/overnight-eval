@@ -31,8 +31,8 @@ def initialize_default_config() -> pb.Config:
     # or more.
     config.max_delta = 0.20
 
-    # Don't trade stocks with less than 100k shares. This is really generous.
-    config.volume_threshold = 100_000
+    # Don't trade stocks with less than 200k shares.
+    config.volume_threshold = 200_000
 
     # Don't bother with positions that are too cheap; again, I wouldn't touch it
     # if it's not at least $0.70.
@@ -117,7 +117,7 @@ def main():
     if not args.output:
         print(earlist_all)
     else:
-        render_files(symbols, config, earlist_all, args.output)
+        evaluate.render_files(symbols, config, earlist_all, args.output)
 
 
 if __name__ == '__main__':

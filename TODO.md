@@ -2,9 +2,12 @@
 - Check the term structure of IV; Add info about the term structure too.
 - Check the IVR.
 - Add info about skew.
-- Add stats about the prior earnings.
+- Fetch details stats about the prior moves after prior earnings, for each name.
 - Filter out strikes at below 4 deltas, their spreads are out-of-whack.
 - Also look at the price of the strangle one strike in, to avoid too harsh filtering on that.
-
 - Add AMC & BMO per symbol.
-- Create script to check for outlier moves automatically, and warn via notification.
+- Create a script to check for outlier moves after hours automatically, and warn.
+  Normalize the move in terms of EM.
+- Compute statistics over each season and time period.
+- Simulate the effect of buying protection.
+- Attempt to use the skew or any other data to see if it is predictive at all.
