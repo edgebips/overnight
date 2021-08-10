@@ -6,7 +6,7 @@ post-close and next day pre-open earnings announcements from companies in the US
 equity space. Each term is inspected for desirable characteristics.
 """
 __copyright__ = "Copyright (C) 2021  Martin Blais"
-
+__license__ = "GNU GPLv2"
 
 import argparse
 import datetime
@@ -19,7 +19,39 @@ from overnight import earnings_pb2 as pb
 from overnight import evaluate
 
 
+# TODO(blais): Move this to a input file.
+def initialize_default_config() -> pb.Config:
+    """Create an initialize a default configuration."""
+    config = pb.Config()
+
+    # Earnings beyond 45 days are pretty useless (not enough vol contraction).
+    config.max_dte = 60
+
+    # Don't play too tight; we won't bother with any position with a delta of 20
+    # or more.
+    config.max_delta = 0.20
+
+    # Don't trade stocks with less than 100k shares. This is really generous.
+    config.volume_threshold = 100_000
+
+    # Don't bother with positions that are too cheap; again, I wouldn't touch it
+    # if it's not at least $0.70.
+    config.min_strangle_credits = 0.40
+
+    # Don't bother trading names with spreads 50% of the option value.
+    config.max_spread_frac = 0.50
+
+    # Don't look at strikes with no size.
+    config.min_size = 1
+
+    # A wide strangle ought to be at least 2x the expected move.
+    config.strangle_em_width = 2.2
+
+    return config
+
+
 def main():
+    # Parse args.
     parser = argparse.ArgumentParser()
     ameritrade.add_args(parser)
 
@@ -46,7 +78,7 @@ def main():
 
     # Initialize fixed configuration.
     # TODO(blais): Allow reading this from an input file.
-    config = evaluate.initialize_default_config()
+    config = initialize_default_config()
 
     # Read a list of symbols.
     symbols = []

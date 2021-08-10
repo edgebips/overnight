@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
-"""Fetch lists of earnings from websites.
+"""Fetch lists of US equity names with earnings from public websites.
 """
 __copyright__ = "Copyright (C) 2021  Martin Blais"
+__license__ = "GNU GPLv2"
 
+import datetime
 import logging
 import csv
-import sys
-import itertools
-import time
 import io
+import os
 from os import path
 from typing import Optional
 
 import click
-from selenium import webdriver
-from selenium.webdriver.chrome import options
-from selenium.webdriver.common.by import By
 
 from overnight import fetch
 
@@ -26,6 +23,8 @@ from overnight import fetch
 def main(headless: bool, output: Optional[str]):
     logging.basicConfig(level=logging.INFO, format='%(levelname)-8s: %(message)s')
 
+    # Ftech the symbols from one of many popular websites providing lists of
+    # names with verified earnings dates. This may use Selenium.
     tickers_amc, tickers_bmo = fetch.fetch_earnings_whispers_list(headless)
     buf = io.StringIO()
     wr = csv.writer(buf)
@@ -36,12 +35,14 @@ def main(headless: bool, output: Optional[str]):
             num_tickers += 1
             wr.writerow([ticker, when])
 
+    # Write out the list to a CSV file.
     if not output:
         output = path.join(os.getcwd(), 'earnings-{}.csv'.format(datetime.date.today()))
         logging.info(f"Wrote {num_tickers} entries to {output}")
     with open(output, 'w') as outfile:
         outfile.write(buf.getvalue())
 
+    # Write it also to stdout.
     if not output:
         print(buf.getvalue())
 

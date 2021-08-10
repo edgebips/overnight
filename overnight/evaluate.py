@@ -1,6 +1,7 @@
 """Evaluation library."""
 
 __copyright__ = "Copyright (C) 2021  Martin Blais"
+__license__ = "GNU GPLv2"
 
 from decimal import Decimal
 from os import path
@@ -125,7 +126,7 @@ def estimate_expected_move(chain_info, expi: Expi) -> Optional[tuple[Decimal, De
     except IndexError:
         return
 
-    # Q: Check averaging the square.
+    # TODO(blais): Check averaging the square.
     if call0['volatility'] == 'NaN' or put0['volatility'] == 'NaN':
         return
     atm_volatility = (call0['volatility'] + put0['volatility'])/2 / 100
@@ -170,6 +171,7 @@ def get_term(chain: Chain, expi: Expi, config: pb.Config) -> pb.Expiration:
     # Error messages returned.
     x = pb.Expiration()
 
+    # Store metadata about the term/expiration.
     x.is_regular = is_regular_expiration(expi)
     x.days = expi.info['daysToExpiration']
     expiration = expi.info['expiration']
@@ -177,6 +179,7 @@ def get_term(chain: Chain, expi: Expi, config: pb.Config) -> pb.Expiration:
     x.date.month = expiration.month
     x.date.day = expiration.day
 
+    # Estimate the expected move a few ways.
     em_data = estimate_expected_move(chain.info, expi)
     if em_data is None:
         x.diagnostics.append("ERROR: Could not calculate EM")
@@ -188,10 +191,12 @@ def get_term(chain: Chain, expi: Expi, config: pb.Config) -> pb.Expiration:
     x.em_implied = em_implied
     x.em_effective = em_effective
 
+    # Calculate targets for strikes.
     width = Decimal(config.strangle_em_width) * em_effective
     x.put.target = put_target_strike = (underlying_price - width).quantize(Q)
     x.call.target = call_target_strike = (underlying_price + width).quantize(Q)
 
+    # Select candidate strikes.
     x.put.strike, index = get_closest_strike(expi.puts, put_target_strike)
     put_strike = expi.puts[index]
     if put_strike['bidSize'] < config.min_size or put_strike['askSize'] < config.min_size:
@@ -203,23 +208,27 @@ def get_term(chain: Chain, expi: Expi, config: pb.Config) -> pb.Expiration:
         x.diagnostics.append(f"WARNING: No size on calls "
                              f"({call_strike['bidSize']} x {call_strike['askSize']})")
 
+    # Evaluate the price of the position.
     x.put.mark = put_strike['mark']
     x.call.mark = call_strike['mark']
+    x.strangle_cr = x.put.mark + x.call.mark
 
+    # Evaluate suitability of the spreads (on the option value).
+    # TODO(blais): Make this more robust by looking at neighboring strikes.
     x.put.spread = put_strike['ask'] - put_strike['bid']
     x.call.spread = call_strike['ask'] - call_strike['bid']
     x.put.spread_frac = x.put.spread / x.put.mark if x.put.mark else 0
     x.call.spread_frac = x.call.spread / x.call.mark if x.call.mark else 0
 
+    # Flag missing greeks.
     if put_strike['delta'] == 'NaN' or call_strike['delta'] == 'NaN':
         x.diagnostics.append("ERROR: Delta is NaN")
 
+    # Flag excessive deltas.
     x.put.delta = safe_quantize(put_strike['delta'], Q)
     x.call.delta = safe_quantize(call_strike['delta'], Q)
     if abs(x.put.delta) > config.max_delta or abs(x.call.delta) > config.max_delta:
         x.diagnostics.append(f"WARNING: Delta is too large (>{config.max_delta})")
-
-    x.strangle_cr = x.put.mark + x.call.mark
 
     # Check for enough credits.
     if x.strangle_cr < config.min_strangle_credits:
@@ -241,12 +250,13 @@ def analyze_earnings(chain_json: Json,
                      config: pb.Config) -> pb.Earnings:
     """Run the analysis on a single earnings name."""
 
+    # Store properties of the chain.
     earnings = pb.Earnings()
-
     chain = normalize_chain(chain_json)
     earnings.underlying = chain.info['symbol']
     earnings.name = get_company_description(chain)
 
+    # Store basic stats on the stock.
     underlying = chain.info['underlying']
     earnings.price = underlying['mark']
     earnings.year_high = underlying['fiftyTwoWeekHigh']
@@ -295,12 +305,14 @@ def get_url(name: str) -> str:
 def render_earnings_to_html(earlist: pb.EarningsList, outfile: io.IOBase):
     """Render a single HTML file with all the earnings."""
 
+    # Create an evaluation environment for the templates.
     env = jinja2.Environment(
         loader=jinja2.PackageLoader("overnight", ""),
         autoescape=jinja2.select_autoescape())
     env.globals['get_url'] = get_url
     env.globals['get_clean_name'] = get_clean_name
 
+    # Render the index template. The output is a single HTML file.
     index = env.get_template("index.html")
     outfile.write(index.render(earlist=earlist,
                                date=datetime.date.today()))
@@ -337,19 +349,6 @@ def render_files(symbols: List[str], config: pb.Config, earlist_all: pb.Earnings
             earlist.earnings.append(earnings)
     with open(path.join(output_dir, "earnings.html"), "w") as outfile:
         render_earnings_to_html(earlist, outfile)
-
-
-def initialize_default_config() -> pb.Config:
-    """Create an initialize a default configuration."""
-    config = pb.Config()
-    config.max_dte = 60
-    config.max_delta = 0.20
-    config.volume_threshold = 100_000
-    config.min_strangle_credits = 0.40
-    config.max_spread_frac = 0.50
-    config.min_size = 1
-    config.strangle_em_width = 2.0
-    return config
 
 
 def fetch_chain(td: ameritrade.AmeritradeAPI, rate_limit, **kwargs):

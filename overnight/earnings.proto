@@ -1,5 +1,8 @@
 // -*- mode: protobuf -*-
 // Earnings output data object for Overnight.
+//
+// Copyright (C) 2021  Martin Blais
+// License: "GNU GPLv2"
 
 syntax = "proto2";
 

@@ -17,3 +17,9 @@ This is intended to be run first thing in the morning to support preparation for
 earnings the next day, preparing a filterd list of names to check out, names
 that share the right characteristics to be interesting enough (based on price,
 volatility, magnitude of expected move, spreads, volume, etc.).
+
+## License
+
+Copyright (C) 2021  Martin Blais.
+
+License: GNU GPLv2.

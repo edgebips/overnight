@@ -1,5 +1,7 @@
 """Fetch lists of earnings from websites."""
+
 __copyright__ = "Copyright (C) 2021  Martin Blais"
+__license__ = "GNU GPLv2"
 
 import logging
 import csv
