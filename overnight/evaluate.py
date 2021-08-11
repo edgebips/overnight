@@ -302,6 +302,17 @@ def get_url(name: str) -> str:
         urllib.parse.quote(get_clean_name(name)))
 
 
+def render_index_to_html(outfile: io.IOBase):
+    """Render a single HTML file with all the earnings."""
+
+    # Render the index template.
+    env = jinja2.Environment(
+        loader=jinja2.PackageLoader("overnight", ""),
+        autoescape=jinja2.select_autoescape())
+    index = env.get_template("index.html")
+    outfile.write(index.render())
+
+
 def render_earnings_to_html(earlist: pb.EarningsList, outfile: io.IOBase):
     """Render a single HTML file with all the earnings."""
 
@@ -313,7 +324,7 @@ def render_earnings_to_html(earlist: pb.EarningsList, outfile: io.IOBase):
     env.globals['get_clean_name'] = get_clean_name
 
     # Render the index template. The output is a single HTML file.
-    index = env.get_template("index.html")
+    index = env.get_template("overview.html")
     outfile.write(index.render(earlist=earlist,
                                date=datetime.date.today()))
 
@@ -349,6 +360,10 @@ def render_files(symbols: List[str], config: pb.Config, earlist_all: pb.Earnings
             earlist.earnings.append(earnings)
     with open(path.join(output_dir, "earnings.html"), "w") as outfile:
         render_earnings_to_html(earlist, outfile)
+
+    # Render an index to all those files.
+    with open(path.join(output_dir, "index.html"), "w") as outfile:
+        render_index_to_html(outfile)
 
 
 def fetch_chain(td: ameritrade.AmeritradeAPI, rate_limit, **kwargs):

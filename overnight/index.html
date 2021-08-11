@@ -3,7 +3,7 @@
 
 <head>
 
-  <title>Earnings for {{date}}</title>
+  <title>Earnings for {{date}} (Index)</title>
 
   <link rel="preconnect"
         href="https://fonts.gstatic.com">
@@ -18,66 +18,20 @@
         width: 1600px;
     }
 
-    div.earnings {
-        margin-bottom: 2em;
-    }
-
-    table {
-        border-collapse: collapse;
-        width: 100%;
-    }
-    table td, table th {
-        border: thin solid black;
-        text-align: center;
-        padding-left: 0.5em;
-        padding-right: 0.5em;
-    }
-    table tr.header {
-        font-style: italic;
-        font-size: smaller;
-        color: #888;
-    }
-    td.strangle_cr {
-        background-color: #EDC;
-    }
-    td.em_straddle, td.em_implied {
-        background-color: #EEF;
-    }
-    td.em_effective {
-        background-color: #CCF;
-    }
-    td.price {
-        font-weight: bold;
-        background-color: #DDD;
-    }
-    td.put-strike {
-        background-color: #FCC;
-    }
-    td.call-strike {
-        background-color: #CFC;
-    }
-    td.put-target {
-        background-color: #FEE;
-    }
-    td.call-target {
-        background-color: #EFE;
-    }
-    td.diagnostics {
-        font-size: smaller;
-        text-align: left;
-        color: red;
-    }
-
   </style>
 
 </head>
 
 <body>
-<h1>Earnings for {{date}}</h1>
+<h1>Earnings for {{date}} (Index)</h1>
 
-{% for e in earlist.earnings: %}
-    {% include "single.html" %}
-{% endfor %}
+<ul>
+<li><a href="earnings.html">Selected Earnings</a></li>
+<li><a href="earnings-all.html">All Earnings</a></li>
+<li><a href="config.pbtxt">Configuration</a></li>
+<li><a href="earnings.pbtxt">Raw input data</a></li>
+<li><a href="symbols.csv">Download Symbols (CSV)</a></li>
+</ul>
 
 </body>
 </html>
