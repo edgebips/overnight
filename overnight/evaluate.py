@@ -310,7 +310,7 @@ def render_index_to_html(outfile: io.IOBase):
         loader=jinja2.PackageLoader("overnight", ""),
         autoescape=jinja2.select_autoescape())
     index = env.get_template("index.html")
-    outfile.write(index.render())
+    outfile.write(index.render(date=datetime.date.today()))
 
 
 def render_earnings_to_html(earlist: pb.EarningsList, outfile: io.IOBase):
@@ -345,7 +345,7 @@ def render_files(symbols: List[str], config: pb.Config, earlist_all: pb.Earnings
         print(earlist_all, file=outfile)
 
     # Copy the input symbols.
-    with open(path.join(output_dir, "symbols.csv"), "w") as outfile:
+    with open(path.join(output_dir, "symbols-all.csv"), "w") as outfile:
         wr = csv.writer(outfile)
         wr.writerows([(symbol,) for symbol in symbols])
 
@@ -360,6 +360,12 @@ def render_files(symbols: List[str], config: pb.Config, earlist_all: pb.Earnings
             earlist.earnings.append(earnings)
     with open(path.join(output_dir, "earnings.html"), "w") as outfile:
         render_earnings_to_html(earlist, outfile)
+
+    # Produce a watchlist for import of just the tradeable names.
+    with open(path.join(output_dir, "symbols.csv"), "w") as outfile:
+        wr = csv.writer(outfile)
+        wr.writerow([('Symbol',)])
+        wr.writerows([(earnings.underlying,) for earnings in earlist.earnings])
 
     # Render an index to all those files.
     with open(path.join(output_dir, "index.html"), "w") as outfile:
