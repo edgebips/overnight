@@ -287,6 +287,9 @@ def analyze_earnings(chain_json: Json,
         earnings.diagnostics.append(
             f"WARNING: Low volume (less than {config.volume_threshold})")
 
+    # Save the evaluation time.
+    earnings.evaluation_time = datetime.datetime.now().isoformat()
+
     return earnings
 
 
@@ -313,7 +316,9 @@ def render_index_to_html(outfile: io.IOBase):
     outfile.write(index.render(date=datetime.date.today()))
 
 
-def render_earnings_to_html(earlist: pb.EarningsList, outfile: io.IOBase):
+def render_earnings_to_html(earlist: pb.EarningsList,
+                            evaluation_time: datetime.datetime,
+                            outfile: io.IOBase):
     """Render a single HTML file with all the earnings."""
 
     # Create an evaluation environment for the templates.
@@ -326,6 +331,7 @@ def render_earnings_to_html(earlist: pb.EarningsList, outfile: io.IOBase):
     # Render the index template. The output is a single HTML file.
     index = env.get_template("overview.html")
     outfile.write(index.render(earlist=earlist,
+                               evaluation_time=evaluation_time,
                                date=datetime.date.today()))
 
 
@@ -349,9 +355,15 @@ def render_files(symbols: List[str], config: pb.Config, earlist_all: pb.Earnings
         wr = csv.writer(outfile)
         wr.writerows([(symbol,) for symbol in symbols])
 
+    # Calculate evaluation time.
+    evaluation_time = (
+        parser.parse(max(earnings.evaluation_time
+                         for earnings in earlist_all.earnings))
+        .replace(microsecond=0))
+
     # Render to a single HTML page.
     with open(path.join(output_dir, "earnings-all.html"), "w") as outfile:
-        render_earnings_to_html(earlist_all, outfile)
+        render_earnings_to_html(earlist_all, evaluation_time, outfile)
 
     # Filter down the list to tradeable ones only and render to another page.
     earlist = pb.EarningsList()
@@ -359,7 +371,7 @@ def render_files(symbols: List[str], config: pb.Config, earlist_all: pb.Earnings
         if is_tradeable(earnings):
             earlist.earnings.append(earnings)
     with open(path.join(output_dir, "earnings.html"), "w") as outfile:
-        render_earnings_to_html(earlist, outfile)
+        render_earnings_to_html(earlist, evaluation_time, outfile)
 
     # Produce a watchlist for import of just the tradeable names.
     with open(path.join(output_dir, "symbols.csv"), "w") as outfile:

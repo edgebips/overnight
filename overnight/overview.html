@@ -75,6 +75,8 @@
 <body>
 <h1>Earnings for {{date}}</h1>
 
+<p>Evaluated at: {{evaluation_time}}</p>
+
 {% for e in earlist.earnings: %}
     {% include "single.html" %}
 {% endfor %}

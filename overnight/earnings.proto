@@ -88,6 +88,9 @@ message Earnings {
 
   // A list of errors and other warnings related to this analysis.
   repeated string diagnostics = 12;
+
+  // Evaluation time (date/time string).
+  optional string evaluation_time = 13;
 }
 
 enum EarningsTime {
