@@ -376,8 +376,8 @@ def render_files(symbols: List[str], config: pb.Config, earlist_all: pb.Earnings
     # Produce a watchlist for import of just the tradeable names.
     with open(path.join(output_dir, "symbols.csv"), "w") as outfile:
         wr = csv.writer(outfile)
-        wr.writerow([('Symbol',)])
-        wr.writerows([(earnings.underlying,) for earnings in earlist.earnings])
+        wr.writerow(['Symbol'])
+        wr.writerows([[earnings.underlying] for earnings in earlist.earnings])
 
     # Render an index to all those files.
     with open(path.join(output_dir, "index.html"), "w") as outfile:
