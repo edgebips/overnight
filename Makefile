@@ -14,7 +14,13 @@ overnight/earnings_pb2.py: overnight/earnings.proto
 fetch:
 	overnight-fetch --no-headless --output=$(SYMBOLS)
 
-eval:
+clear:
+	-rm -rf /tmp/td
+
+eval: clear
+	overnight-eval -v --ameritrade-cache=/tmp/td --csv-filename=$(SYMBOLS) --output=$(OUTPUT_DIR)
+
+reeval:
 	overnight-eval -v --ameritrade-cache=/tmp/td --csv-filename=$(SYMBOLS) --output=$(OUTPUT_DIR)
 
 conflicts:
