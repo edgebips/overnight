@@ -39,6 +39,8 @@ def main(headless: bool, output: Optional[str]):
     if not output:
         output = path.join(os.getcwd(), 'earnings-{}.csv'.format(datetime.date.today()))
         logging.info(f"Wrote {num_tickers} entries to {output}")
+
+    os.makedirs(path.dirname(output), exist_ok=True)
     with open(output, 'w') as outfile:
         outfile.write(buf.getvalue())
 

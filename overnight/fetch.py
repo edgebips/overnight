@@ -37,7 +37,7 @@ def fetch_earnings_whispers_list(headless: bool) -> str:
     # Create driver.
     opts = options.Options()
     opts.headless = headless
-    driver = webdriver.Chrome(executable_path="chromedriver", options=opts)
+    driver = webdriver.Chrome(executable_path="chromium.chromedriver", options=opts)
     driver.implicitly_wait(3)
 
     # Open home page.

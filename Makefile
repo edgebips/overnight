@@ -1,8 +1,8 @@
 #!/usr/bin/env make
 
 TODAY ?= $(shell date +%Y%m%d)
-SYMBOLS = $(HOME)/trading/earnings/earnings-$(TODAY).csv
-OUTPUT_DIR = $(HOME)/trading/earnings/$(TODAY)
+OUTPUT = $(HOME)/p/overnight-data/earnings/$(TODAY)
+SYMBOLS = $(OUTPUT)/fetch.csv
 
 all:
 
@@ -18,10 +18,10 @@ clear:
 	-rm -rf /tmp/td
 
 eval: clear
-	overnight-eval -v --ameritrade-cache=/tmp/td --csv-filename=$(SYMBOLS) --output=$(OUTPUT_DIR)
+	overnight-eval -v --ameritrade-cache=/tmp/td --csv-filename=$(SYMBOLS) --output=$(OUTPUT)
 
 reeval:
-	overnight-eval -v --ameritrade-cache=/tmp/td --csv-filename=$(SYMBOLS) --output=$(OUTPUT_DIR)
+	overnight-eval -v --ameritrade-cache=/tmp/td --csv-filename=$(SYMBOLS) --output=$(OUTPUT)
 
 conflicts:
 	overnight-conflicts $(SYMBOLS)
