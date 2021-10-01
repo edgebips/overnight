@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""Identify trades with upcoming earnings that have conflicts with existing positions.
+
+This fetches the list of positions from a Tastyworks account and lists those
+which have conflicting earnings. Those positions should get assessed for
+suitability across the upcoming announcement (and adjusted accordingly).
+
+TODO: Convert this to use Johnny instead of connecting to TW, which would
+automatically support all included brokers.
+"""
+__copyright__ = "Copyright (C) 2021  Martin Blais"
+__license__ = "GNU GPLv2"
+
+from decimal import Decimal
+from typing import Optional
+import time
+
+import click
+
+from goodkids import session as sesslib
+from goodkids import utils
+from johnny.base.etl import petl
+from johnny.sources.tastyworks_csv import symbols as twsym
+from overnight import positions
+import ameritrade
+
+
+import argparse
+import logging
+
+def main():
+    # Parse arguments.
+    logging.basicConfig(level=logging.INFO, format='%(levelname)-8s: %(message)s')
+    parser = argparse.ArgumentParser(description=__doc__.strip())
+    ameritrade.add_args(parser)
+
+    parser.add_argument('--username', '-u',
+                        help="Tastyworks username.")
+    parser.add_argument('--password') # Tastyworks password.
+    parser.add_argument('--symbols-filename',
+                        help="If given, restrict to the given list of symbols")
+    parser.add_argument('--threshold', '-t', type=float, default=None,
+                        action='store', help="Threshold below which we don't display")
+
+    args = parser.parse_args()
+
+    # Fetch the list of positions from Tastyworks.
+    session = sesslib.get_session(args.username, args.password)
+    position_underlyings = positions.get_position_underlyings(session)
+    position_underlyings = [s for s in position_underlyings if not s.startswith('/')]
+
+    if args.symbols_filename:
+        # Read a list of symbols.
+        symbols_table = petl.fromcsv(args.symbols_filename)
+        earnings_underlyings = set(symbols_table.values('Symbol'))
+        position_underlyings &= earnings_underlyings
+
+    # Fetch the quotes and calculate the moves.
+    td = ameritrade.open(ameritrade.config_from_args(args))
+    header = ('symbol', 'move', 'lastPrice', 'closePrice')
+    moves = [header]
+    for symbol in sorted(position_underlyings):
+        quotes = td.GetQuote(symbol=symbol)
+        quote = quotes[symbol]
+        lastPrice = quote['lastPrice']
+        closePrice = quote['closePrice']
+        move = (lastPrice - closePrice)/closePrice
+        moves.append((symbol, move, closePrice, lastPrice))
+        # TODO(blais): Make throttling conditional on cache hit.
+        ##time.sleep(0.05)
+
+    # Print out the moves in descending order of relative size.
+    table = (petl.wrap(moves)
+             .addfield('absmove', lambda r: abs(r.move))
+             .sort('absmove', reverse=1))
+    if args.threshold:
+        table = table.selectge('absmove', Decimal(args.threshold))
+    table = (table
+             .cutout('absmove')
+             .convert('move', lambda value: Decimal(value * 100).quantize(Decimal('0.1'))))
+    print(table.lookallstr())
+
+
+if __name__ == '__main__':
+    main()

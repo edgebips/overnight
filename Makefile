@@ -28,3 +28,6 @@ conflicts:
 
 share:
 	publish-tmp earnings-$(TODAY) $(OUTPUT)
+
+movers:
+	overnight-movers --ameritrade-cache=/tmp/td --threshold=0.02
