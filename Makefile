@@ -27,4 +27,4 @@ conflicts:
 	overnight-conflicts $(SYMBOLS)
 
 share:
-	publish-tmp earnings-$(TODAY) $(OUTPUT_DIR)
+	publish-tmp earnings-$(TODAY) $(OUTPUT)

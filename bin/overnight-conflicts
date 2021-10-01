@@ -19,6 +19,7 @@ from goodkids import session as sesslib
 from goodkids import utils
 from johnny.base.etl import petl
 from johnny.sources.tastyworks_csv import symbols as twsym
+from overnight import positions
 
 
 @click.command()
@@ -26,18 +27,9 @@ from johnny.sources.tastyworks_csv import symbols as twsym
 @click.option('--username', '-u', help="Tastyworks username.")
 @click.option('--password') # Tastyworks password.
 def main(symbols_filename: str, username: Optional[str], password: Optional[str]):
-    # Get the account.
+    # Fetch the list of positions from Tastyworks.
     session = sesslib.get_session(username, password)
-    accounts = utils.get_accounts(session)
-
-    # Find the set of underlyings for which I have a position.
-    position_underlyings = set()
-    for account in accounts:
-        accid = account['account-number']
-        resp = session.relget(f'/accounts/{accid}/positions')
-        for position in utils.get_data(resp)['items']:
-            inst = twsym.ParseSymbol(position['symbol'])
-            position_underlyings.add(inst.underlying)
+    position_underlyings = positions.get_position_underlyings(session)
 
     # Read a list of symbols.
     symbols_table = petl.fromcsv(symbols_filename)

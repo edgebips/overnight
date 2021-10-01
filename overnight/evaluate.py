@@ -94,6 +94,7 @@ def find_regular_expirations(chain: Chain) -> Iterator[Expi]:
 def get_closest_strike(strikes: list[StrikeData],
                        target_price: Decimal) -> tuple[Decimal, int]:
     """Return the closest strike and index from the list."""
+    assert isinstance(target_price, Decimal)
     _, strikePrice, index = min([
         (abs(strike.strikePrice - target_price), strike.strikePrice, index)
         for index, strike in enumerate(strikes)])
@@ -184,39 +185,45 @@ def get_term(chain: Chain, expi: Expi, config: pb.Config) -> pb.Expiration:
     if em_data is None:
         x.diagnostics.append("ERROR: Could not calculate EM")
         return x
-    em_straddle, em_implied, x.atm_iv = em_data
+    em_straddle, em_implied, atm_iv = em_data
+    x.atm_iv = float(atm_iv)
     em_effective = (em_straddle + em_implied * Decimal('0.85')) / 2
     underlying_price = chain.info['underlying']['mark']
-    x.em_straddle = em_straddle
-    x.em_implied = em_implied
-    x.em_effective = em_effective
+    x.em_straddle = float(em_straddle)
+    x.em_implied = float(em_implied)
+    x.em_effective = float(em_effective)
 
     # Calculate targets for strikes.
     width = Decimal(config.strangle_em_width) * em_effective
-    x.put.target = put_target_strike = (underlying_price - width).quantize(Q)
-    x.call.target = call_target_strike = (underlying_price + width).quantize(Q)
+    put_target_strike = (underlying_price - width).quantize(Q)
+    call_target_strike = (underlying_price + width).quantize(Q)
+    x.put.target = float(put_target_strike)
+    x.call.target = float(call_target_strike)
 
     # Select candidate strikes.
-    x.put.strike, index = get_closest_strike(expi.puts, put_target_strike)
+    put_closest_strike, index = get_closest_strike(expi.puts, put_target_strike)
+    x.put.strike = float(put_closest_strike)
+
     put_strike = expi.puts[index]
     if put_strike['bidSize'] < config.min_size or put_strike['askSize'] < config.min_size:
         x.diagnostics.append(
             f"WARNING: No size on puts ({put_strike['bidSize']} x {put_strike['askSize']})")
-    x.call.strike, index = get_closest_strike(expi.calls, call_target_strike)
+    call_closest_strike, index = get_closest_strike(expi.calls, call_target_strike)
+    x.call.strike = float(call_closest_strike)
     call_strike = expi.calls[index]
     if call_strike['bidSize'] < config.min_size or call_strike['askSize'] < config.min_size:
         x.diagnostics.append(f"WARNING: No size on calls "
                              f"({call_strike['bidSize']} x {call_strike['askSize']})")
 
     # Evaluate the price of the position.
-    x.put.mark = put_strike['mark']
-    x.call.mark = call_strike['mark']
+    x.put.mark = float(put_strike['mark'])
+    x.call.mark = float(call_strike['mark'])
     x.strangle_cr = x.put.mark + x.call.mark
 
     # Evaluate suitability of the spreads (on the option value).
     # TODO(blais): Make this more robust by looking at neighboring strikes.
-    x.put.spread = put_strike['ask'] - put_strike['bid']
-    x.call.spread = call_strike['ask'] - call_strike['bid']
+    x.put.spread = float(put_strike['ask'] - put_strike['bid'])
+    x.call.spread = float(call_strike['ask'] - call_strike['bid'])
     x.put.spread_frac = x.put.spread / x.put.mark if x.put.mark else 0
     x.call.spread_frac = x.call.spread / x.call.mark if x.call.mark else 0
 
@@ -225,8 +232,8 @@ def get_term(chain: Chain, expi: Expi, config: pb.Config) -> pb.Expiration:
         x.diagnostics.append("ERROR: Delta is NaN")
 
     # Flag excessive deltas.
-    x.put.delta = safe_quantize(put_strike['delta'], Q)
-    x.call.delta = safe_quantize(call_strike['delta'], Q)
+    x.put.delta = float(safe_quantize(put_strike['delta'], Q))
+    x.call.delta = float(safe_quantize(call_strike['delta'], Q))
     if abs(x.put.delta) > config.max_delta or abs(x.call.delta) > config.max_delta:
         x.diagnostics.append(f"WARNING: Delta is too large (>{config.max_delta})")
 
@@ -258,12 +265,12 @@ def analyze_earnings(chain_json: Json,
 
     # Store basic stats on the stock.
     underlying = chain.info['underlying']
-    earnings.price = underlying['mark']
-    earnings.year_high = underlying['fiftyTwoWeekHigh']
-    earnings.year_low = underlying['fiftyTwoWeekLow']
-    earnings.percent_change = underlying['percentChange']
-    earnings.volume = underlying['totalVolume']
-    earnings.quote_time = underlying['quoteTime']
+    earnings.price = float(underlying['mark'])
+    earnings.year_high = float(underlying['fiftyTwoWeekHigh'])
+    earnings.year_low = float(underlying['fiftyTwoWeekLow'])
+    earnings.percent_change = float(underlying['percentChange'])
+    earnings.volume = int(underlying['totalVolume'])
+    earnings.quote_time = int(underlying['quoteTime'])
 
     # Get data for the front term if non-regular.
     expi_list = []
